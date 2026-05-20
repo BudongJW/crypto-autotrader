@@ -1,0 +1,38 @@
+# Environment & secrets
+.env
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Freqtrade data
+user_data/data/
+user_data/logs/
+user_data/backtest_results/
+user_data/plot/
+*.sqlite
+
+# ML models
+user_data/models/
+*.pkl
+*.joblib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+docker-compose.override.yml

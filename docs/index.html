@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto AutoTrader — Dashboard</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { font-size: 1.5rem; margin-bottom: 8px; }
+  .meta { color: #8b949e; font-size: 0.85rem; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card h3 { font-size: 0.8rem; color: #8b949e; text-transform: uppercase; margin-bottom: 8px; }
+  .card .value { font-size: 1.8rem; font-weight: 700; }
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  .neutral { color: var(--yellow); }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+  th { background: #1c2129; color: #8b949e; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; background: #1f6feb22; color: var(--blue); }
+  .loading { text-align: center; padding: 40px; color: #8b949e; }
+  section { margin-bottom: 32px; }
+  section h2 { font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+</style>
+</head>
+<body>
+  <h1>Crypto AutoTrader</h1>
+  <p class="meta">Freqtrade + Upbit KRW | <span id="updated">loading...</span></p>
+
+  <div class="grid">
+    <div class="card"><h3>Mode</h3><div class="value neutral" id="mode">—</div></div>
+    <div class="card"><h3>Open Trades</h3><div class="value" id="open-count">—</div></div>
+    <div class="card"><h3>Total Trades</h3><div class="value" id="total-trades">—</div></div>
+    <div class="card"><h3>Win Rate</h3><div class="value" id="win-rate">—</div></div>
+    <div class="card"><h3>Avg Profit</h3><div class="value" id="avg-profit">—</div></div>
+  </div>
+
+  <section>
+    <h2>Open Positions</h2>
+    <table>
+      <thead><tr><th>Pair</th><th>Stake (KRW)</th><th>Open Rate</th><th>Open Date</th><th>Tag</th></tr></thead>
+      <tbody id="open-tbody"><tr><td colspan="5" class="loading">loading...</td></tr></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Today's Closed Trades</h2>
+    <table>
+      <thead><tr><th>Pair</th><th>Profit %</th><th>Close Date</th><th>Exit Reason</th></tr></thead>
+      <tbody id="closed-tbody"><tr><td colspan="4" class="loading">loading...</td></tr></tbody>
+    </table>
+  </section>
+
+<script>
+async function load() {
+  try {
+    const res = await fetch('status.json?' + Date.now());
+    const d = await res.json();
+
+    document.getElementById('updated').textContent = new Date(d.updated_at).toLocaleString('ko-KR');
+    document.getElementById('mode').textContent = d.mode;
+    document.getElementById('open-count').textContent = d.open_trades.length;
+    document.getElementById('total-trades').textContent = d.total_trades;
+    document.getElementById('win-rate').textContent = d.win_rate + '%';
+
+    const ap = document.getElementById('avg-profit');
+    ap.textContent = (d.total_profit_pct >= 0 ? '+' : '') + d.total_profit_pct + '%';
+    ap.className = 'value ' + (d.total_profit_pct >= 0 ? 'positive' : 'negative');
+
+    const ot = document.getElementById('open-tbody');
+    if (d.open_trades.length === 0) {
+      ot.innerHTML = '<tr><td colspan="5" class="loading">No open positions</td></tr>';
+    } else {
+      ot.innerHTML = d.open_trades.map(t => `<tr>
+        <td><strong>${t.pair}</strong></td>
+        <td>${Number(t.stake).toLocaleString()}</td>
+        <td>${Number(t.open_rate).toLocaleString()}</td>
+        <td>${new Date(t.open_date).toLocaleString('ko-KR')}</td>
+        <td><span class="tag">${t.enter_tag || ''}</span></td>
+      </tr>`).join('');
+    }
+
+    const ct = document.getElementById('closed-tbody');
+    if (d.closed_trades_today.length === 0) {
+      ct.innerHTML = '<tr><td colspan="4" class="loading">No trades closed today</td></tr>';
+    } else {
+      ct.innerHTML = d.closed_trades_today.map(t => `<tr>
+        <td><strong>${t.pair}</strong></td>
+        <td class="${t.profit_pct >= 0 ? 'positive' : 'negative'}">${t.profit_pct >= 0 ? '+' : ''}${t.profit_pct}%</td>
+        <td>${new Date(t.close_date).toLocaleString('ko-KR')}</td>
+        <td>${t.exit_reason || ''}</td>
+      </tr>`).join('');
+    }
+  } catch (e) {
+    document.getElementById('updated').textContent = 'Failed to load status';
+  }
+}
+load();
+</script>
+</body>
+</html>
