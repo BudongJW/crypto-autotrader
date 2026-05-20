@@ -9,9 +9,11 @@ CryptoFusionStrategy — Freqtrade IStrategy for Upbit KRW spot trading.
 
 from __future__ import annotations
 
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import reduce
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -21,6 +23,12 @@ from pandas import DataFrame
 from freqtrade.persistence import Trade
 from freqtrade.strategy import IStrategy
 from freqtrade.strategy.interface import stoploss_from_absolute
+
+try:
+    from hmmlearn.hmm import GaussianHMM
+    HMM_AVAILABLE = True
+except ImportError:
+    HMM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +111,30 @@ class CryptoFusionStrategy(IStrategy):
     TURBULENCE_MULT = 1.5
 
     # =========================================================================
+    # Signal Fusion weights (from signal_fusion.py)
+    # =========================================================================
+    DEFAULT_FUSION_WEIGHTS = {
+        "ta_score": 0.25,
+        "lgbm_prob": 0.30,
+        "breakout": 0.20,
+        "btc_sentiment": 0.10,
+        "regime": 0.15,
+        "bias": -0.1,
+    }
+
+    FUSION_BUY_THRESHOLD = 0.55
+    FUSION_STRONG_BUY = 0.70
+    FUSION_EXIT_THRESHOLD = 0.40
+
+    # HMM Regime parameters
+    HMM_N_STATES = 3
+    HMM_LOOKBACK = 200
+
+    # Experience buffer
+    EXPERIENCE_MAX_SIZE = 500
+    FUSION_LEARN_INTERVAL_HOURS = 6
+
+    # =========================================================================
     # Informative pairs — BTC/KRW for turbulence filter
     # =========================================================================
     def informative_pairs(self):
@@ -112,14 +144,25 @@ class CryptoFusionStrategy(IStrategy):
     # MAIN: populate_indicators
     # =========================================================================
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # --- Base TA indicators ---
+        # --- Layer 2: Base TA indicators + composite score ---
         dataframe = self._compute_base_indicators(dataframe)
-
-        # --- TA Composite score ---
         dataframe = self._compute_ta_composite(dataframe)
 
-        # --- Volatility breakout ---
+        # --- Layer 1: Volatility breakout ---
         dataframe = self._compute_volatility_breakout(dataframe)
+
+        # --- Layer 3: FreqAI LightGBM prediction ---
+        if self.freqai_info.get("enabled", False):
+            dataframe = self.freqai.start(dataframe, metadata, self)
+        else:
+            dataframe["&-direction"] = 0.5
+            dataframe["do_predict"] = 1
+
+        # --- Layer 4: HMM Regime ---
+        dataframe = self._compute_hmm_regime(dataframe)
+
+        # --- Layer 5: Signal Fusion ---
+        dataframe = self._compute_fusion(dataframe)
 
         return dataframe
 
@@ -127,40 +170,43 @@ class CryptoFusionStrategy(IStrategy):
     # ENTRY SIGNALS
     # =========================================================================
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        strong_conditions = [
-            dataframe["ta_score"] > 60,
-            dataframe["breakout_signal"] == 1,
-            dataframe["close"] > dataframe["sma_200"],
+        # Strong buy: fusion >= 0.70
+        strong = [
+            dataframe["fusion_prob"] >= self.FUSION_STRONG_BUY,
+            dataframe["do_predict"] == 1,
             dataframe["volume"] > 0,
         ]
         dataframe.loc[
-            reduce(lambda x, y: x & y, strong_conditions),
+            reduce(lambda x, y: x & y, strong),
             ["enter_long", "enter_tag"],
-        ] = (1, "ta_strong_breakout")
+        ] = (1, "fusion_strong")
 
-        normal_conditions = [
-            dataframe["ta_score"] > 40,
-            dataframe["breakout_signal"] == 1,
-            dataframe["close"] > dataframe["sma_200"],
+        # Normal buy: fusion >= 0.55
+        normal = [
+            dataframe["fusion_prob"] >= self.FUSION_BUY_THRESHOLD,
+            dataframe["fusion_prob"] < self.FUSION_STRONG_BUY,
+            dataframe["do_predict"] == 1,
             dataframe["volume"] > 0,
             dataframe["enter_long"] != 1,
         ]
         dataframe.loc[
-            reduce(lambda x, y: x & y, normal_conditions),
+            reduce(lambda x, y: x & y, normal),
             ["enter_long", "enter_tag"],
-        ] = (1, "ta_breakout")
+        ] = (1, "fusion_buy")
 
-        ta_only_conditions = [
-            dataframe["ta_score"] > 50,
-            dataframe["close"] > dataframe["sma_200"],
-            dataframe["rsi_14"] < 70,
-            dataframe["volume"] > 0,
-            dataframe["enter_long"] != 1,
-        ]
-        dataframe.loc[
-            reduce(lambda x, y: x & y, ta_only_conditions),
-            ["enter_long", "enter_tag"],
-        ] = (1, "ta_momentum")
+        # Fallback: TA-only when FreqAI is disabled
+        if not self.freqai_info.get("enabled", False):
+            ta_fallback = [
+                dataframe["ta_score"] > 50,
+                dataframe["breakout_signal"] == 1,
+                dataframe["close"] > dataframe["sma_200"],
+                dataframe["volume"] > 0,
+                dataframe["enter_long"] != 1,
+            ]
+            dataframe.loc[
+                reduce(lambda x, y: x & y, ta_fallback),
+                ["enter_long", "enter_tag"],
+            ] = (1, "ta_breakout")
 
         return dataframe
 
@@ -168,13 +214,13 @@ class CryptoFusionStrategy(IStrategy):
     # EXIT SIGNALS
     # =========================================================================
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        exit_conditions = [
-            (dataframe["ta_score"] < -40) | (dataframe["rsi_14"] > 80),
-        ]
+        # Fusion-based exit
         dataframe.loc[
-            reduce(lambda x, y: x & y, exit_conditions),
+            (dataframe["fusion_prob"] < self.FUSION_EXIT_THRESHOLD)
+            | (dataframe["ta_score"] < -40)
+            | (dataframe["rsi_14"] > 85),
             ["exit_long", "exit_tag"],
-        ] = (1, "ta_bearish")
+        ] = (1, "fusion_exit")
 
         return dataframe
 
@@ -506,3 +552,353 @@ class CryptoFusionStrategy(IStrategy):
         ).astype(int)
 
         return dataframe
+
+    # =========================================================================
+    # PHASE 2: FreqAI Feature Engineering
+    # (ported from lgbm_predictor.py _build_features)
+    # =========================================================================
+
+    def feature_engineering_expand_all(
+        self, dataframe: DataFrame, period: int, metadata: dict, **kwargs
+    ) -> DataFrame:
+        dataframe[f"%-rsi-{period}"] = ta.RSI(dataframe, timeperiod=period)
+        dataframe[f"%-mfi-{period}"] = ta.MFI(dataframe, timeperiod=period)
+        dataframe[f"%-adx-{period}"] = ta.ADX(dataframe, timeperiod=period)
+        dataframe[f"%-sma-{period}"] = ta.SMA(dataframe, timeperiod=period)
+        dataframe[f"%-ema-{period}"] = ta.EMA(dataframe, timeperiod=period)
+        dataframe[f"%-roc-{period}"] = ta.ROC(dataframe, timeperiod=period)
+
+        # Bollinger band width & position
+        bb = ta.BBANDS(dataframe, timeperiod=period, nbdevup=2.0, nbdevdn=2.0)
+        bb_range = (bb["upperband"] - bb["lowerband"]).replace(0, np.nan)
+        dataframe[f"%-bb_width-{period}"] = bb_range / dataframe["close"]
+        dataframe[f"%-bb_pos-{period}"] = (
+            (dataframe["close"] - bb["lowerband"]) / bb_range
+        )
+
+        # Volume ratio
+        vol_ma = dataframe["volume"].rolling(period).mean().replace(0, np.nan)
+        dataframe[f"%-vol_ratio-{period}"] = dataframe["volume"] / vol_ma
+
+        # Return over period
+        dataframe[f"%-return-{period}"] = dataframe["close"].pct_change(period)
+
+        # ATR ratio
+        atr = ta.ATR(dataframe, timeperiod=period)
+        dataframe[f"%-atr_pct-{period}"] = atr / dataframe["close"].replace(0, np.nan)
+
+        # OBV slope
+        obv = ta.OBV(dataframe)
+        dataframe[f"%-obv_slope-{period}"] = obv.diff(period)
+
+        return dataframe
+
+    def feature_engineering_expand_basic(
+        self, dataframe: DataFrame, metadata: dict, **kwargs
+    ) -> DataFrame:
+        dataframe["%-pct_change"] = dataframe["close"].pct_change()
+        dataframe["%-raw_volume"] = dataframe["volume"]
+        dataframe["%-high_low_range"] = (
+            (dataframe["high"] - dataframe["low"])
+            / dataframe["close"].replace(0, np.nan)
+        )
+        return dataframe
+
+    def feature_engineering_standard(
+        self, dataframe: DataFrame, metadata: dict, **kwargs
+    ) -> DataFrame:
+        # Time features
+        dataframe["%-hour_of_day"] = dataframe["date"].dt.hour
+        dataframe["%-day_of_week"] = dataframe["date"].dt.dayofweek
+
+        # Momentum acceleration (2nd derivative)
+        ret = dataframe["close"].pct_change()
+        dataframe["%-momentum_accel"] = ret.diff()
+
+        # Price position in recent 240-candle range (~20h in 5m)
+        high_240 = dataframe["high"].rolling(240).max()
+        low_240 = dataframe["low"].rolling(240).min()
+        range_240 = (high_240 - low_240).replace(0, np.nan)
+        dataframe["%-price_position"] = (dataframe["close"] - low_240) / range_240
+
+        # Candlestick body ratio
+        candle_range = (dataframe["high"] - dataframe["low"]).replace(0, np.nan)
+        dataframe["%-body_ratio"] = (
+            (dataframe["close"] - dataframe["open"]) / candle_range
+        )
+
+        # Volume surge
+        vol_ma_240 = dataframe["volume"].rolling(240).mean().replace(0, np.nan)
+        dataframe["%-vol_surge"] = (dataframe["volume"] / vol_ma_240).clip(upper=5)
+
+        return dataframe
+
+    def set_freqai_targets(
+        self, dataframe: DataFrame, metadata: dict, **kwargs
+    ) -> DataFrame:
+        label_period = self.freqai_info.get(
+            "feature_parameters", {}
+        ).get("label_period_candles", 24)
+
+        future_close = dataframe["close"].shift(-label_period)
+        dataframe["&-direction"] = np.where(
+            future_close > dataframe["close"], 1.0, 0.0
+        )
+        return dataframe
+
+    # =========================================================================
+    # PHASE 3: HMM Regime Detection (ported from hmm_regime.py)
+    # =========================================================================
+    def _compute_hmm_regime(self, dataframe: DataFrame) -> DataFrame:
+        dataframe["hmm_state"] = "sideways"
+        dataframe["hmm_confidence"] = 0.5
+
+        if not HMM_AVAILABLE or len(dataframe) < self.HMM_LOOKBACK:
+            return dataframe
+
+        # 1h returns: 12 candles of 5m
+        hourly_returns = dataframe["close"].pct_change(12).dropna()
+        hourly_vol = hourly_returns.rolling(60).std().dropna()
+
+        if len(hourly_vol) < 50:
+            return dataframe
+
+        common_idx = hourly_returns.index.intersection(hourly_vol.index)
+        X = np.column_stack([
+            hourly_returns.loc[common_idx].values,
+            hourly_vol.loc[common_idx].values,
+        ])
+        valid = ~np.isnan(X).any(axis=1) & ~np.isinf(X).any(axis=1)
+        X_clean = X[valid]
+        clean_idx = common_idx[valid]
+
+        if len(X_clean) < 50:
+            return dataframe
+
+        try:
+            model = GaussianHMM(
+                n_components=self.HMM_N_STATES,
+                covariance_type="full",
+                n_iter=200,
+                random_state=42,
+                tol=0.01,
+            )
+            model.fit(X_clean)
+            states = model.predict(X_clean)
+            posteriors = model.predict_proba(X_clean)
+
+            # Map states by mean return: lowest=bear, highest=bull
+            means = [X_clean[states == s, 0].mean() for s in range(self.HMM_N_STATES)]
+            order = np.argsort(means)
+            state_map = {order[0]: "bear", order[1]: "sideways", order[2]: "bull"}
+
+            mapped = [state_map[s] for s in states]
+            conf = [posteriors[i, states[i]] for i in range(len(states))]
+
+            result_states = pd.Series("sideways", index=dataframe.index)
+            result_conf = pd.Series(0.5, index=dataframe.index)
+            result_states.loc[clean_idx] = mapped
+            result_conf.loc[clean_idx] = conf
+
+            dataframe["hmm_state"] = result_states.ffill()
+            dataframe["hmm_confidence"] = result_conf.ffill()
+
+        except Exception as e:
+            logger.warning("HMM fitting failed: %s", e)
+
+        return dataframe
+
+    # =========================================================================
+    # PHASE 3: Signal Fusion (ported from signal_fusion.py)
+    # =========================================================================
+    def _compute_fusion(self, dataframe: DataFrame) -> DataFrame:
+        w = self._load_fusion_weights()
+
+        # Normalize TA score: -100..+100 → -1..+1
+        ta_norm = (dataframe["ta_score"] / 100.0).clip(-1, 1)
+
+        # LGBM direction: 0..1 → logit → -1..+1
+        lgbm_raw = dataframe["&-direction"].clip(0.05, 0.95)
+        lgbm_logit = np.log(lgbm_raw / (1 - lgbm_raw))
+        lgbm_norm = (lgbm_logit / 2.0).clip(-1, 1)
+
+        # Breakout signal: bool → ±score
+        breakout_norm = np.where(
+            dataframe["breakout_signal"] == 1, 0.6, -0.3
+        )
+
+        # BTC sentiment (replaces overnight gap)
+        btc_sentiment = self._compute_btc_sentiment(dataframe)
+
+        # Regime
+        regime_score = np.where(
+            dataframe["hmm_state"] == "bull", 0.8,
+            np.where(dataframe["hmm_state"] == "bear", -0.8, 0.0),
+        )
+        regime_norm = regime_score * dataframe["hmm_confidence"]
+
+        # Sigmoid fusion
+        logit = (
+            w["ta_score"] * ta_norm * 3.0
+            + w["lgbm_prob"] * lgbm_norm * 3.0
+            + w["breakout"] * breakout_norm * 3.0
+            + w["btc_sentiment"] * btc_sentiment * 3.0
+            + w["regime"] * regime_norm * 3.0
+            + w["bias"]
+        )
+
+        dataframe["fusion_prob"] = 1.0 / (1.0 + np.exp(-np.clip(logit, -10, 10)))
+        return dataframe
+
+    def _compute_btc_sentiment(self, dataframe: DataFrame) -> np.ndarray:
+        try:
+            btc_df, _ = self.dp.get_analyzed_dataframe("BTC/KRW", self.timeframe)
+            if btc_df is not None and len(btc_df) > 60:
+                btc_ret_1h = btc_df["close"].pct_change(12).iloc[-1]
+                btc_ret_24h = btc_df["close"].pct_change(288).iloc[-1]
+                sentiment = np.clip(btc_ret_1h * 10 + btc_ret_24h * 5, -1, 1)
+                return np.full(len(dataframe), sentiment)
+        except Exception:
+            pass
+        return np.zeros(len(dataframe))
+
+    def _load_fusion_weights(self) -> dict:
+        path = Path("user_data/logs/fusion_weights.json")
+        if path.exists():
+            try:
+                with open(path) as f:
+                    saved = json.load(f)
+                merged = dict(self.DEFAULT_FUSION_WEIGHTS)
+                merged.update(saved)
+                return merged
+            except Exception:
+                pass
+        return dict(self.DEFAULT_FUSION_WEIGHTS)
+
+    def _save_fusion_weights(self, weights: dict) -> None:
+        path = Path("user_data/logs/fusion_weights.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(weights, f, indent=2)
+
+    # =========================================================================
+    # PHASE 3: Experience Buffer + Adaptive Learning
+    # (ported from experience.py + adaptive_learning.py)
+    # =========================================================================
+
+    _last_fusion_learn: datetime | None = None
+
+    def bot_loop_start(self, current_time: datetime, **kwargs) -> None:
+        if self._last_fusion_learn is None:
+            self._last_fusion_learn = current_time
+
+        elapsed = (current_time - self._last_fusion_learn).total_seconds()
+        if elapsed >= self.FUSION_LEARN_INTERVAL_HOURS * 3600:
+            self._learn_fusion_weights()
+            self._last_fusion_learn = current_time
+
+    def confirm_trade_exit(
+        self,
+        pair: str,
+        trade: Trade,
+        order_type: str,
+        amount: float,
+        rate: float,
+        time_in_force: str,
+        exit_reason: str,
+        current_time: datetime,
+        **kwargs,
+    ) -> bool:
+        self._log_experience(trade, rate, exit_reason)
+        return True
+
+    def _log_experience(self, trade: Trade, exit_rate: float, reason: str) -> None:
+        path = Path("user_data/logs/experience.json")
+        experiences = []
+        if path.exists():
+            try:
+                experiences = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        pnl_pct = ((exit_rate - trade.open_rate) / trade.open_rate) * 100
+
+        record = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "pair": trade.pair,
+            "action": "sell",
+            "enter_tag": trade.enter_tag or "",
+            "exit_reason": reason,
+            "open_rate": trade.open_rate,
+            "close_rate": exit_rate,
+            "pnl_pct": round(pnl_pct, 3),
+            "outcome": "win" if pnl_pct > 0 else "loss",
+            "stake_amount": float(trade.stake_amount),
+        }
+        experiences.append(record)
+
+        # Keep last N records
+        if len(experiences) > self.EXPERIENCE_MAX_SIZE:
+            experiences = experiences[-self.EXPERIENCE_MAX_SIZE:]
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(experiences, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    def _learn_fusion_weights(self) -> None:
+        path = Path("user_data/logs/experience.json")
+        if not path.exists():
+            return
+
+        try:
+            experiences = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+
+        if len(experiences) < 20:
+            return
+
+        wins = [e for e in experiences if e.get("outcome") == "win"]
+        losses = [e for e in experiences if e.get("outcome") == "loss"]
+
+        if not wins or not losses:
+            return
+
+        win_rate = len(wins) / len(experiences)
+        avg_win_pnl = np.mean([e["pnl_pct"] for e in wins])
+        avg_loss_pnl = np.mean([abs(e["pnl_pct"]) for e in losses])
+
+        w = dict(self.DEFAULT_FUSION_WEIGHTS)
+
+        # Adjust bias based on win rate
+        if win_rate > 0.55:
+            w["bias"] = max(w["bias"] - 0.02, -0.2)
+        elif win_rate < 0.40:
+            w["bias"] = min(w["bias"] + 0.02, 0.1)
+
+        # Boost breakout weight if breakout entries perform well
+        breakout_wins = [
+            e for e in wins if "breakout" in e.get("enter_tag", "")
+        ]
+        if len(breakout_wins) > 5:
+            breakout_wr = len(breakout_wins) / max(
+                1, len([e for e in experiences if "breakout" in e.get("enter_tag", "")])
+            )
+            if breakout_wr > 0.6:
+                w["breakout"] = min(w["breakout"] + 0.02, 0.35)
+            elif breakout_wr < 0.35:
+                w["breakout"] = max(w["breakout"] - 0.02, 0.05)
+
+        # Normalize weights (excluding bias) to sum to 1.0
+        signal_keys = ["ta_score", "lgbm_prob", "breakout", "btc_sentiment", "regime"]
+        total = sum(w[k] for k in signal_keys)
+        if total > 0:
+            for k in signal_keys:
+                w[k] = w[k] / total
+
+        self._save_fusion_weights(w)
+        logger.info(
+            "Fusion weights updated: win_rate=%.1f%%, avg_win=%.2f%%, bias=%.3f",
+            win_rate * 100, avg_win_pnl, w["bias"],
+        )

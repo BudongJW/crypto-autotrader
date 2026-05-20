@@ -99,6 +99,40 @@
         "password": "changeme"
     },
 
+    "freqai": {
+        "enabled": false,
+        "purge_old_models": 2,
+        "train_period_days": 30,
+        "backtest_period_days": 7,
+        "identifier": "crypto_fusion_lgbm",
+        "live_retrain_hours": 6,
+        "expiration_hours": 48,
+        "fit_live_predictions_candles": 100,
+        "feature_parameters": {
+            "include_timeframes": ["5m", "15m", "1h"],
+            "include_corr_pairlist": ["BTC/KRW", "ETH/KRW"],
+            "label_period_candles": 24,
+            "include_shifted_candles": 2,
+            "DI_threshold": 0.9,
+            "weight_factor": 0.9,
+            "indicator_periods_candles": [10, 20, 60]
+        },
+        "data_split_parameters": {
+            "test_size": 0.15,
+            "random_state": 42,
+            "shuffle": false
+        },
+        "model_training_parameters": {
+            "n_estimators": 300,
+            "learning_rate": 0.05,
+            "num_leaves": 31,
+            "feature_fraction": 0.8,
+            "bagging_fraction": 0.8,
+            "bagging_freq": 5,
+            "min_child_samples": 10
+        }
+    },
+
     "bot_name": "crypto-autotrader",
     "initial_state": "running",
     "internals": {

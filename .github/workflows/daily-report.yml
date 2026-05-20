@@ -1,0 +1,37 @@
+name: Daily Report + Dashboard
+
+on:
+  schedule:
+    - cron: "0 15 * * *"  # 15:00 UTC = 00:00 KST (자정 리포트)
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            user_data/logs/
+            user_data/tradesv3.sqlite
+          key: trader-state-
+          restore-keys: trader-state-
+
+      - name: Generate status report
+        run: python scripts/generate_status.py
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          keep_files: true

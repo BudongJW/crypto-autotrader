@@ -1,6 +1,6 @@
 services:
   freqtrade:
-    image: freqtradeorg/freqtrade:stable
+    image: freqtradeorg/freqtrade:stable_freqai
     restart: unless-stopped
     container_name: crypto-autotrader
     volumes:
