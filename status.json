@@ -1,1 +1,9 @@
-{"updated_at":"2026-05-21T00:00:00Z","mode":"dry_run","open_trades":[],"closed_trades_today":[],"total_profit_pct":0,"win_rate":0,"total_trades":0}
+{
+  "updated_at": "2026-05-21T11:56:05.678889+00:00",
+  "mode": "dry_run",
+  "open_trades": [],
+  "closed_trades_today": [],
+  "total_profit_pct": 0.0,
+  "win_rate": 0.0,
+  "total_trades": 0
+}
