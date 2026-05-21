@@ -75,9 +75,28 @@ def extract_status() -> dict:
 
 def main():
     status = extract_status()
-    out = Path("docs/status.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    docs = Path("docs")
+    docs.mkdir(parents=True, exist_ok=True)
+
+    (docs / "status.json").write_text(
+        json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # Copy index.html to docs/ if not present (for GitHub Pages)
+    src_html = Path("docs/index.html")
+    if not src_html.exists():
+        repo_html = Path("docs/index.html")
+        # Fallback: check repo root
+        for candidate in [Path("docs/index.html"), Path("index.html")]:
+            if candidate.exists():
+                break
+        else:
+            # Generate minimal redirect
+            src_html.write_text(
+                '<meta http-equiv="refresh" content="0;url=status.json">',
+                encoding="utf-8",
+            )
+
     print(f"Status written: {len(status['open_trades'])} open, "
           f"{len(status['closed_trades_today'])} closed today")
 

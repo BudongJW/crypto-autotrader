@@ -5,6 +5,10 @@ on:
     - cron: "0 15 * * *"  # 15:00 UTC = 00:00 KST (자정 리포트)
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pages: write
+
 jobs:
   report:
     runs-on: ubuntu-latest
