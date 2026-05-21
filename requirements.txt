@@ -1,5 +1,4 @@
-freqtrade
-datasieve>=0.1.7
+freqtrade[freqai]
 TA-Lib
 hmmlearn>=0.3.0
 lightgbm>=4.3.0
