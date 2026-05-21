@@ -49,6 +49,7 @@ jobs:
             user_data/logs/
             user_data/tradesv3.sqlite
             user_data/models/
+            user_data/freqaimodels/
           key: trader-state-${{ github.run_id }}
           restore-keys: |
             trader-state-
@@ -61,6 +62,7 @@ jobs:
           timeout 13200 freqtrade trade \
             --config configs/config.json \
             --strategy CryptoFusionStrategy \
+            --freqaimodel LightGBMClassifier \
             --logfile user_data/logs/freqtrade.log \
             --db-url sqlite:///user_data/tradesv3.sqlite \
           || true
@@ -77,6 +79,7 @@ jobs:
             user_data/logs/
             user_data/tradesv3.sqlite
             user_data/models/
+            user_data/freqaimodels/
           key: trader-state-${{ github.run_id }}
 
       - name: Upload logs
