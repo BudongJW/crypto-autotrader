@@ -68,7 +68,7 @@ docker compose up -d
 ## 거래 대상
 
 Upbit KRW 마켓 상위 10종목:
-BTC, ETH, XRP, SOL, DOGE, ADA, AVAX, DOT, MATIC, LINK
+BTC, ETH, XRP, SOL, DOGE, ADA, AVAX, DOT, LINK, SHIB
 
 ## GitHub Actions
 

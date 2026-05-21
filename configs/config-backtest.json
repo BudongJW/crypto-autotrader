@@ -21,8 +21,8 @@
             "ADA/KRW",
             "AVAX/KRW",
             "DOT/KRW",
-            "MATIC/KRW",
-            "LINK/KRW"
+            "LINK/KRW",
+            "SHIB/KRW"
         ],
         "pair_blacklist": []
     },
