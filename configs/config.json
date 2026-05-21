@@ -104,7 +104,7 @@
         "purge_old_models": 2,
         "train_period_days": 30,
         "backtest_period_days": 7,
-        "identifier": "crypto_fusion_lgbm_v2",
+        "identifier": "crypto_fusion_lgbm_v3",
         "live_retrain_hours": 6,
         "expiration_hours": 48,
         "fit_live_predictions_candles": 100,

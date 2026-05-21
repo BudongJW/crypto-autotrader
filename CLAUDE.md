@@ -32,7 +32,7 @@ ADA/KRW, AVAX/KRW, DOT/KRW, LINK/KRW, SHIB/KRW
 
 ## FreqAI 설정
 - config.json `freqai.enabled: false` (기본값) — TA+Breakout만 사용
-- `freqai.enabled: true` + `--freqaimodel LightGBMClassifier` — ML 예측 활성화
+- `freqai.enabled: true` + `--freqaimodel LightGBMRegressor` — ML 예측 활성화
 - 학습 주기: 6시간 (live_retrain_hours)
 - 학습 기간: 30일 (train_period_days)
 
@@ -48,7 +48,7 @@ ADA/KRW, AVAX/KRW, DOT/KRW, LINK/KRW, SHIB/KRW
 freqtrade backtesting --config configs/config-backtest.json --strategy CryptoFusionStrategy --timerange 20250101-
 
 # FreqAI 포함 백테스트
-freqtrade backtesting --config configs/config-backtest.json --strategy CryptoFusionStrategy --freqaimodel LightGBMClassifier --timerange 20250101-
+freqtrade backtesting --config configs/config-backtest.json --strategy CryptoFusionStrategy --freqaimodel LightGBMRegressor --timerange 20250101-
 
 # 데이터 다운로드
 freqtrade download-data --config configs/config.json --timeframes 5m 15m 1h --days 90
