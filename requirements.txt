@@ -1,0 +1,5 @@
+freqtrade
+TA-Lib
+hmmlearn>=0.3.0
+lightgbm>=4.3.0
+scikit-learn>=1.4.0

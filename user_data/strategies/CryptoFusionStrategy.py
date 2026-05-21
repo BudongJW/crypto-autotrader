@@ -17,8 +17,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import talib.abstract as ta
 from pandas import DataFrame
+
+import talib.abstract as ta
 
 from freqtrade.persistence import Trade
 from freqtrade.strategy import IStrategy
