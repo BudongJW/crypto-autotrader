@@ -61,13 +61,34 @@ def extract_status() -> dict:
     row = conn.execute(
         "SELECT COUNT(*) as cnt, "
         "COALESCE(AVG(close_profit), 0) as avg_profit, "
-        "COALESCE(SUM(CASE WHEN close_profit > 0 THEN 1 ELSE 0 END), 0) as wins "
+        "COALESCE(SUM(CASE WHEN close_profit > 0 THEN 1 ELSE 0 END), 0) as wins, "
+        "COALESCE(SUM(close_profit_abs), 0) as total_profit_abs, "
+        "COALESCE(MAX(close_profit), 0) as best_trade, "
+        "COALESCE(MIN(close_profit), 0) as worst_trade "
         "FROM trades WHERE is_open = 0"
     ).fetchone()
     if row and row["cnt"] > 0:
         status["total_trades"] = row["cnt"]
         status["total_profit_pct"] = round(row["avg_profit"] * 100, 2)
         status["win_rate"] = round(row["wins"] / row["cnt"] * 100, 1)
+        status["total_profit_krw"] = round(row["total_profit_abs"], 0)
+        status["best_trade_pct"] = round(row["best_trade"] * 100, 2)
+        status["worst_trade_pct"] = round(row["worst_trade"] * 100, 2)
+
+    # Max drawdown (sequential cumulative profit)
+    dd_rows = conn.execute(
+        "SELECT close_profit_abs FROM trades WHERE is_open = 0 ORDER BY close_date"
+    ).fetchall()
+    if dd_rows:
+        cum = 0.0
+        peak = 0.0
+        max_dd = 0.0
+        for r in dd_rows:
+            cum += r["close_profit_abs"]
+            peak = max(peak, cum)
+            dd = peak - cum
+            max_dd = max(max_dd, dd)
+        status["max_drawdown_krw"] = round(max_dd, 0)
 
     conn.close()
     return status

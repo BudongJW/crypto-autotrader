@@ -22,7 +22,12 @@ from pandas import DataFrame
 import talib.abstract as ta
 
 from freqtrade.persistence import Trade
-from freqtrade.strategy import IStrategy, stoploss_from_absolute
+from freqtrade.strategy import (
+    IStrategy,
+    stoploss_from_absolute,
+    DecimalParameter,
+    IntParameter,
+)
 
 try:
     from hmmlearn.hmm import GaussianHMM
@@ -56,6 +61,13 @@ class CryptoFusionStrategy(IStrategy):
     stoploss = -0.03
     use_custom_stoploss = True
     trailing_stop = False
+
+    # --- Hyperopt parameters ---
+    buy_fusion_threshold = DecimalParameter(0.50, 0.65, default=0.55, space="buy", optimize=True)
+    buy_fusion_strong = DecimalParameter(0.65, 0.80, default=0.70, space="buy", optimize=True)
+    buy_ta_fallback = IntParameter(35, 65, default=50, space="buy", optimize=True)
+    sell_fusion_exit = DecimalParameter(0.30, 0.50, default=0.40, space="sell", optimize=True)
+    sell_rsi_exit = IntParameter(75, 90, default=85, space="sell", optimize=True)
 
     # --- Order types (Upbit: limit only) ---
     order_types = {
@@ -129,6 +141,7 @@ class CryptoFusionStrategy(IStrategy):
     # HMM Regime parameters
     HMM_N_STATES = 3
     HMM_LOOKBACK = 200
+    HMM_RETRAIN_INTERVAL_HOURS = 1
 
     # Experience buffer
     EXPERIENCE_MAX_SIZE = 500
@@ -138,7 +151,11 @@ class CryptoFusionStrategy(IStrategy):
     # Informative pairs — BTC/KRW for turbulence filter
     # =========================================================================
     def informative_pairs(self):
-        return [("BTC/KRW", self.timeframe)]
+        return [
+            ("BTC/KRW", self.timeframe),
+            ("BTC/KRW", "1h"),
+            ("ETH/KRW", "1h"),
+        ]
 
     # =========================================================================
     # MAIN: populate_indicators
@@ -170,9 +187,9 @@ class CryptoFusionStrategy(IStrategy):
     # ENTRY SIGNALS
     # =========================================================================
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # Strong buy: fusion >= 0.70
+        # Strong buy: fusion >= threshold (Hyperopt)
         strong = [
-            dataframe["fusion_prob"] >= self.FUSION_STRONG_BUY,
+            dataframe["fusion_prob"] >= self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
             dataframe["volume"] > 0,
         ]
@@ -181,10 +198,10 @@ class CryptoFusionStrategy(IStrategy):
             ["enter_long", "enter_tag"],
         ] = (1, "fusion_strong")
 
-        # Normal buy: fusion >= 0.55
+        # Normal buy: fusion >= threshold (Hyperopt)
         normal = [
-            dataframe["fusion_prob"] >= self.FUSION_BUY_THRESHOLD,
-            dataframe["fusion_prob"] < self.FUSION_STRONG_BUY,
+            dataframe["fusion_prob"] >= self.buy_fusion_threshold.value,
+            dataframe["fusion_prob"] < self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
             dataframe["volume"] > 0,
             dataframe["enter_long"] != 1,
@@ -197,7 +214,7 @@ class CryptoFusionStrategy(IStrategy):
         # Fallback: TA-only when FreqAI is disabled
         if not self.freqai_info.get("enabled", False):
             ta_fallback = [
-                dataframe["ta_score"] > 50,
+                dataframe["ta_score"] > self.buy_ta_fallback.value,
                 dataframe["breakout_signal"] == 1,
                 dataframe["close"] > dataframe["sma_200"],
                 dataframe["volume"] > 0,
@@ -214,11 +231,11 @@ class CryptoFusionStrategy(IStrategy):
     # EXIT SIGNALS
     # =========================================================================
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # Fusion-based exit
+        # Fusion-based exit (Hyperopt thresholds)
         dataframe.loc[
-            (dataframe["fusion_prob"] < self.FUSION_EXIT_THRESHOLD)
+            (dataframe["fusion_prob"] < self.sell_fusion_exit.value)
             | (dataframe["ta_score"] < -40)
-            | (dataframe["rsi_14"] > 85),
+            | (dataframe["rsi_14"] > self.sell_rsi_exit.value),
             ["exit_long", "exit_tag"],
         ] = (1, "fusion_exit")
 
@@ -259,8 +276,52 @@ class CryptoFusionStrategy(IStrategy):
         )
 
     # =========================================================================
+    # CONFIDENCE-BASED POSITION SIZING
+    # =========================================================================
+    def custom_stake_amount(
+        self,
+        current_time: datetime,
+        current_rate: float,
+        proposed_stake: float,
+        min_stake: float | None,
+        max_stake: float,
+        leverage: float,
+        entry_tag: str | None,
+        side: str,
+        **kwargs,
+    ) -> float:
+        dataframe, _ = self.dp.get_analyzed_dataframe(
+            kwargs.get("pair", ""), self.timeframe
+        )
+        if dataframe is None or dataframe.empty:
+            return proposed_stake
+
+        last = dataframe.iloc[-1]
+        fusion_prob = last.get("fusion_prob", 0.5)
+
+        # Scale stake: 0.55 → 60%, 0.70 → 100%, 0.85+ → 120%
+        if fusion_prob >= 0.80:
+            scale = 1.2
+        elif fusion_prob >= 0.70:
+            scale = 1.0
+        elif fusion_prob >= 0.60:
+            scale = 0.8
+        else:
+            scale = 0.6
+
+        # Reduce in bear regime
+        hmm_state = last.get("hmm_state", "sideways")
+        if hmm_state == "bear":
+            scale *= 0.7
+
+        stake = proposed_stake * scale
+        return max(min_stake or stake, min(stake, max_stake))
+
+    # =========================================================================
     # CONFIRM TRADE ENTRY — risk checks (from risk_manager.py)
     # =========================================================================
+    MAX_CORRELATED_POSITIONS = 3
+
     def confirm_trade_entry(
         self,
         pair: str,
@@ -286,6 +347,25 @@ class CryptoFusionStrategy(IStrategy):
                         recent_vol / long_vol,
                         pair,
                     )
+                    return False
+
+        # Correlation filter: limit alt positions when BTC is open
+        open_trades = Trade.get_trades_proxy(is_open=True)
+        alt_count = sum(1 for t in open_trades if t.pair != "BTC/KRW")
+        if pair != "BTC/KRW" and alt_count >= self.MAX_CORRELATED_POSITIONS:
+            logger.info(
+                "Alt position limit reached (%d/%d), blocking %s",
+                alt_count, self.MAX_CORRELATED_POSITIONS, pair,
+            )
+            return False
+
+        # ETH 1h trend filter: reject alt entries if ETH 1h is bearish
+        if pair not in ("BTC/KRW", "ETH/KRW"):
+            eth_df, _ = self.dp.get_analyzed_dataframe("ETH/KRW", "1h")
+            if eth_df is not None and len(eth_df) > 20:
+                eth_sma20 = eth_df["close"].rolling(20).mean().iloc[-1]
+                if eth_df["close"].iloc[-1] < eth_sma20 * 0.98:
+                    logger.info("ETH 1h downtrend, blocking alt entry %s", pair)
                     return False
 
         return True
@@ -649,19 +729,18 @@ class CryptoFusionStrategy(IStrategy):
     # =========================================================================
     # PHASE 3: HMM Regime Detection (ported from hmm_regime.py)
     # =========================================================================
-    def _compute_hmm_regime(self, dataframe: DataFrame) -> DataFrame:
-        dataframe["hmm_state"] = "sideways"
-        dataframe["hmm_confidence"] = 0.5
+    _hmm_model = None
+    _hmm_state_map = None
+    _hmm_last_train: datetime | None = None
 
+    def _train_hmm_model(self, dataframe: DataFrame) -> None:
         if not HMM_AVAILABLE or len(dataframe) < self.HMM_LOOKBACK:
-            return dataframe
+            return
 
-        # 1h returns: 12 candles of 5m
         hourly_returns = dataframe["close"].pct_change(12).dropna()
         hourly_vol = hourly_returns.rolling(60).std().dropna()
-
         if len(hourly_vol) < 50:
-            return dataframe
+            return
 
         common_idx = hourly_returns.index.intersection(hourly_vol.index)
         X = np.column_stack([
@@ -670,10 +749,9 @@ class CryptoFusionStrategy(IStrategy):
         ])
         valid = ~np.isnan(X).any(axis=1) & ~np.isinf(X).any(axis=1)
         X_clean = X[valid]
-        clean_idx = common_idx[valid]
 
         if len(X_clean) < 50:
-            return dataframe
+            return
 
         try:
             model = GaussianHMM(
@@ -685,14 +763,48 @@ class CryptoFusionStrategy(IStrategy):
             )
             model.fit(X_clean)
             states = model.predict(X_clean)
-            posteriors = model.predict_proba(X_clean)
-
-            # Map states by mean return: lowest=bear, highest=bull
             means = [X_clean[states == s, 0].mean() for s in range(self.HMM_N_STATES)]
             order = np.argsort(means)
-            state_map = {order[0]: "bear", order[1]: "sideways", order[2]: "bull"}
+            self._hmm_model = model
+            self._hmm_state_map = {
+                order[0]: "bear", order[1]: "sideways", order[2]: "bull",
+            }
+            logger.info("HMM model retrained: %d samples", len(X_clean))
+        except Exception as e:
+            logger.warning("HMM training failed: %s", e)
 
-            mapped = [state_map[s] for s in states]
+    def _compute_hmm_regime(self, dataframe: DataFrame) -> DataFrame:
+        dataframe["hmm_state"] = "sideways"
+        dataframe["hmm_confidence"] = 0.5
+
+        if self._hmm_model is None or self._hmm_state_map is None:
+            self._train_hmm_model(dataframe)
+
+        if self._hmm_model is None:
+            return dataframe
+
+        hourly_returns = dataframe["close"].pct_change(12).dropna()
+        hourly_vol = hourly_returns.rolling(60).std().dropna()
+        if len(hourly_vol) < 10:
+            return dataframe
+
+        common_idx = hourly_returns.index.intersection(hourly_vol.index)
+        X = np.column_stack([
+            hourly_returns.loc[common_idx].values,
+            hourly_vol.loc[common_idx].values,
+        ])
+        valid = ~np.isnan(X).any(axis=1) & ~np.isinf(X).any(axis=1)
+        X_clean = X[valid]
+        clean_idx = common_idx[valid]
+
+        if len(X_clean) < 5:
+            return dataframe
+
+        try:
+            states = self._hmm_model.predict(X_clean)
+            posteriors = self._hmm_model.predict_proba(X_clean)
+
+            mapped = [self._hmm_state_map[s] for s in states]
             conf = [posteriors[i, states[i]] for i in range(len(states))]
 
             result_states = pd.Series("sideways", index=dataframe.index)
@@ -702,9 +814,9 @@ class CryptoFusionStrategy(IStrategy):
 
             dataframe["hmm_state"] = result_states.ffill()
             dataframe["hmm_confidence"] = result_conf.ffill()
-
         except Exception as e:
-            logger.warning("HMM fitting failed: %s", e)
+            logger.warning("HMM predict failed, retraining: %s", e)
+            self._hmm_model = None
 
         return dataframe
 
@@ -753,11 +865,26 @@ class CryptoFusionStrategy(IStrategy):
     def _compute_btc_sentiment(self, dataframe: DataFrame) -> np.ndarray:
         try:
             btc_df, _ = self.dp.get_analyzed_dataframe("BTC/KRW", self.timeframe)
-            if btc_df is not None and len(btc_df) > 60:
-                btc_ret_1h = btc_df["close"].pct_change(12).iloc[-1]
-                btc_ret_24h = btc_df["close"].pct_change(288).iloc[-1]
-                sentiment = np.clip(btc_ret_1h * 10 + btc_ret_24h * 5, -1, 1)
-                return np.full(len(dataframe), sentiment)
+            if btc_df is not None and len(btc_df) > 288:
+                btc_ret_1h = btc_df["close"].pct_change(12)
+                btc_ret_24h = btc_df["close"].pct_change(288)
+                btc_sentiment = (btc_ret_1h * 10 + btc_ret_24h * 5).clip(-1, 1)
+
+                # BTC 1h trend bonus from informative pair
+                btc_1h, _ = self.dp.get_analyzed_dataframe("BTC/KRW", "1h")
+                btc_1h_trend = pd.Series(0.0, index=btc_sentiment.index)
+                if btc_1h is not None and len(btc_1h) > 20:
+                    sma20 = btc_1h["close"].rolling(20).mean()
+                    trend_raw = ((btc_1h["close"] - sma20) / sma20 * 5).clip(-0.3, 0.3)
+                    btc_1h_trend.iloc[-len(trend_raw):] = trend_raw.values[-len(btc_1h_trend):]
+
+                combined = (btc_sentiment + btc_1h_trend).clip(-1, 1)
+
+                # Align to dataframe length
+                result = np.zeros(len(dataframe))
+                n = min(len(combined), len(dataframe))
+                result[-n:] = combined.values[-n:]
+                return result
         except Exception:
             pass
         return np.zeros(len(dataframe))
@@ -792,6 +919,16 @@ class CryptoFusionStrategy(IStrategy):
         if self._last_fusion_learn is None:
             self._last_fusion_learn = current_time
 
+        # Periodic HMM retraining
+        if self._hmm_last_train is None:
+            self._hmm_last_train = current_time
+        hmm_elapsed = (current_time - self._hmm_last_train).total_seconds()
+        if hmm_elapsed >= self.HMM_RETRAIN_INTERVAL_HOURS * 3600:
+            self._hmm_model = None
+            self._hmm_last_train = current_time
+            logger.info("HMM model cache invalidated for retraining")
+
+        # Periodic fusion weight learning
         elapsed = (current_time - self._last_fusion_learn).total_seconds()
         if elapsed >= self.FUSION_LEARN_INTERVAL_HOURS * 3600:
             self._learn_fusion_weights()
@@ -877,18 +1014,38 @@ class CryptoFusionStrategy(IStrategy):
         elif win_rate < 0.40:
             w["bias"] = min(w["bias"] + 0.02, 0.1)
 
-        # Boost breakout weight if breakout entries perform well
-        breakout_wins = [
-            e for e in wins if "breakout" in e.get("enter_tag", "")
-        ]
-        if len(breakout_wins) > 5:
-            breakout_wr = len(breakout_wins) / max(
-                1, len([e for e in experiences if "breakout" in e.get("enter_tag", "")])
-            )
-            if breakout_wr > 0.6:
+        # Per-tag performance analysis
+        tag_stats = {}
+        for tag_key in ("fusion_strong", "fusion_buy", "ta_breakout"):
+            tagged = [e for e in experiences if e.get("enter_tag", "") == tag_key]
+            if len(tagged) >= 5:
+                tag_wr = sum(1 for e in tagged if e["outcome"] == "win") / len(tagged)
+                tag_avg = np.mean([e["pnl_pct"] for e in tagged])
+                tag_stats[tag_key] = {"wr": tag_wr, "avg_pnl": tag_avg}
+
+        # Boost/reduce signal weights based on entry tag performance
+        if "fusion_strong" in tag_stats:
+            pf = tag_stats["fusion_strong"]
+            if pf["wr"] > 0.6 and pf["avg_pnl"] > 0:
+                w["lgbm_prob"] = min(w["lgbm_prob"] + 0.02, 0.45)
+            elif pf["wr"] < 0.4:
+                w["lgbm_prob"] = max(w["lgbm_prob"] - 0.02, 0.15)
+
+        if "ta_breakout" in tag_stats:
+            pf = tag_stats["ta_breakout"]
+            if pf["wr"] > 0.6:
                 w["breakout"] = min(w["breakout"] + 0.02, 0.35)
-            elif breakout_wr < 0.35:
+                w["ta_score"] = min(w["ta_score"] + 0.01, 0.35)
+            elif pf["wr"] < 0.35:
                 w["breakout"] = max(w["breakout"] - 0.02, 0.05)
+
+        # Risk-reward ratio adjustment: if avg_win/avg_loss < 1, tighten entries
+        if avg_loss_pnl > 0:
+            rr_ratio = avg_win_pnl / avg_loss_pnl
+            if rr_ratio < 0.8:
+                w["bias"] = min(w["bias"] + 0.03, 0.1)
+            elif rr_ratio > 1.5:
+                w["bias"] = max(w["bias"] - 0.01, -0.2)
 
         # Normalize weights (excluding bias) to sum to 1.0
         signal_keys = ["ta_score", "lgbm_prob", "breakout", "btc_sentiment", "regime"]
@@ -899,6 +1056,9 @@ class CryptoFusionStrategy(IStrategy):
 
         self._save_fusion_weights(w)
         logger.info(
-            "Fusion weights updated: win_rate=%.1f%%, avg_win=%.2f%%, bias=%.3f",
-            win_rate * 100, avg_win_pnl, w["bias"],
+            "Fusion weights updated: wr=%.1f%%, rr=%.2f, avg_win=%.2f%%, bias=%.3f",
+            win_rate * 100,
+            avg_win_pnl / max(avg_loss_pnl, 0.01),
+            avg_win_pnl,
+            w["bias"],
         )

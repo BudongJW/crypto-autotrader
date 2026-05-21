@@ -36,6 +36,9 @@
     <div class="card"><h3>Total Trades</h3><div class="value" id="total-trades">—</div></div>
     <div class="card"><h3>Win Rate</h3><div class="value" id="win-rate">—</div></div>
     <div class="card"><h3>Avg Profit</h3><div class="value" id="avg-profit">—</div></div>
+    <div class="card"><h3>Total P&L</h3><div class="value" id="total-pnl">—</div></div>
+    <div class="card"><h3>Best Trade</h3><div class="value positive" id="best-trade">—</div></div>
+    <div class="card"><h3>Max Drawdown</h3><div class="value negative" id="max-dd">—</div></div>
   </div>
 
   <section>
@@ -69,6 +72,15 @@ async function load() {
     const ap = document.getElementById('avg-profit');
     ap.textContent = (d.total_profit_pct >= 0 ? '+' : '') + d.total_profit_pct + '%';
     ap.className = 'value ' + (d.total_profit_pct >= 0 ? 'positive' : 'negative');
+
+    const pnl = document.getElementById('total-pnl');
+    const pnlVal = d.total_profit_krw || 0;
+    pnl.textContent = (pnlVal >= 0 ? '+' : '') + Number(pnlVal).toLocaleString() + '₩';
+    pnl.className = 'value ' + (pnlVal >= 0 ? 'positive' : 'negative');
+
+    document.getElementById('best-trade').textContent = '+' + (d.best_trade_pct || 0) + '%';
+    const mdd = document.getElementById('max-dd');
+    mdd.textContent = '-' + Number(d.max_drawdown_krw || 0).toLocaleString() + '₩';
 
     const ot = document.getElementById('open-tbody');
     if (d.open_trades.length === 0) {
