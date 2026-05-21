@@ -22,8 +22,7 @@ from pandas import DataFrame
 import talib.abstract as ta
 
 from freqtrade.persistence import Trade
-from freqtrade.strategy import IStrategy
-from freqtrade.strategy.interface import stoploss_from_absolute
+from freqtrade.strategy import IStrategy, stoploss_from_absolute
 
 try:
     from hmmlearn.hmm import GaussianHMM
