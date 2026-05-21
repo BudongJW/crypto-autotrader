@@ -54,6 +54,16 @@ jobs:
           restore-keys: |
             trader-state-
 
+      - name: Clean stale FreqAI models
+        run: |
+          # Remove old identifier models that don't match current config
+          if [ -d "user_data/models" ]; then
+            find user_data/models -maxdepth 1 -type d -name "crypto_fusion_lgbm" -exec rm -rf {} + 2>/dev/null || true
+          fi
+          if [ -d "user_data/freqaimodels" ]; then
+            find user_data/freqaimodels -maxdepth 1 -type d -name "crypto_fusion_lgbm" -exec rm -rf {} + 2>/dev/null || true
+          fi
+
       - name: Run trader (dry-run)
         env:
           FREQTRADE__EXCHANGE__KEY: ${{ secrets.UPBIT_API_KEY }}
