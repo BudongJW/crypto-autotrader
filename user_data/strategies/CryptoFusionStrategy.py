@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import reduce
 from pathlib import Path
 
@@ -44,7 +44,7 @@ class CryptoFusionStrategy(IStrategy):
 
     timeframe = "5m"
     can_short = False
-    startup_candle_count: int = 200
+    startup_candle_count: int = 300
     process_only_new_candles = True
     use_exit_signal = True
     exit_profit_only = False
@@ -303,9 +303,21 @@ class CryptoFusionStrategy(IStrategy):
         side: str,
         **kwargs,
     ) -> float:
-        dataframe, _ = self.dp.get_analyzed_dataframe(
-            kwargs.get("pair", ""), self.timeframe
-        )
+        # Resolve pair from entry_tag context or open trades
+        pair = ""
+        if entry_tag:
+            for p in self.dp.current_whitelist():
+                df, _ = self.dp.get_analyzed_dataframe(p, self.timeframe)
+                if df is not None and not df.empty:
+                    last_row = df.iloc[-1]
+                    if last_row.get("enter_long", 0) == 1:
+                        pair = p
+                        break
+
+        if not pair:
+            return proposed_stake
+
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         if dataframe is None or dataframe.empty:
             return proposed_stake
 
@@ -328,7 +340,10 @@ class CryptoFusionStrategy(IStrategy):
             scale *= 0.7
 
         stake = proposed_stake * scale
-        return max(min_stake or stake, min(stake, max_stake))
+        stake = min(stake, max_stake)
+        if min_stake is not None:
+            stake = max(stake, min_stake)
+        return stake
 
     # =========================================================================
     # CONFIRM TRADE ENTRY — risk checks (from risk_manager.py)
@@ -795,9 +810,15 @@ class CryptoFusionStrategy(IStrategy):
     # =========================================================================
     # PHASE 3: HMM Regime Detection (ported from hmm_regime.py)
     # =========================================================================
-    _hmm_model = None
-    _hmm_state_map = None
-    _hmm_last_train: datetime | None = None
+    def __init__(self, config: dict) -> None:
+        super().__init__(config)
+        self._hmm_model = None
+        self._hmm_state_map = None
+        self._hmm_last_train: datetime | None = None
+        self._last_fusion_learn: datetime | None = None
+        user_data = Path(config.get("user_data_dir", "user_data"))
+        self._logs_dir = user_data / "logs"
+        self._logs_dir.mkdir(parents=True, exist_ok=True)
 
     def _train_hmm_model(self, dataframe: DataFrame) -> None:
         if not HMM_AVAILABLE or len(dataframe) < self.HMM_LOOKBACK:
@@ -942,7 +963,15 @@ class CryptoFusionStrategy(IStrategy):
                 if btc_1h is not None and len(btc_1h) > 20:
                     sma20 = btc_1h["close"].rolling(20).mean()
                     trend_raw = ((btc_1h["close"] - sma20) / sma20 * 5).clip(-0.3, 0.3)
-                    btc_1h_trend.iloc[-len(trend_raw):] = trend_raw.values[-len(btc_1h_trend):]
+                    # Resample 1h trend to 5m by forward-filling
+                    trend_1h = trend_raw.to_frame("trend")
+                    trend_1h.index = btc_1h["date"]
+                    trend_5m = trend_1h.reindex(btc_df["date"], method="ffill")
+                    if len(trend_5m) == len(btc_1h_trend):
+                        btc_1h_trend = trend_5m["trend"].values
+                    else:
+                        n = min(len(trend_5m), len(btc_1h_trend))
+                        btc_1h_trend.iloc[-n:] = trend_5m["trend"].values[-n:]
 
                 combined = (btc_sentiment + btc_1h_trend).clip(-1, 1)
 
@@ -956,7 +985,7 @@ class CryptoFusionStrategy(IStrategy):
         return np.zeros(len(dataframe))
 
     def _load_fusion_weights(self) -> dict:
-        path = Path("user_data/logs/fusion_weights.json")
+        path = self._logs_dir / "fusion_weights.json"
         if path.exists():
             try:
                 with open(path) as f:
@@ -969,8 +998,7 @@ class CryptoFusionStrategy(IStrategy):
         return dict(self.DEFAULT_FUSION_WEIGHTS)
 
     def _save_fusion_weights(self, weights: dict) -> None:
-        path = Path("user_data/logs/fusion_weights.json")
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path = self._logs_dir / "fusion_weights.json"
         with open(path, "w") as f:
             json.dump(weights, f, indent=2)
 
@@ -978,8 +1006,6 @@ class CryptoFusionStrategy(IStrategy):
     # PHASE 3: Experience Buffer + Adaptive Learning
     # (ported from experience.py + adaptive_learning.py)
     # =========================================================================
-
-    _last_fusion_learn: datetime | None = None
 
     def bot_loop_start(self, current_time: datetime, **kwargs) -> None:
         if self._last_fusion_learn is None:
@@ -1012,11 +1038,14 @@ class CryptoFusionStrategy(IStrategy):
         current_time: datetime,
         **kwargs,
     ) -> bool:
-        self._log_experience(trade, rate, exit_reason)
+        try:
+            self._log_experience(trade, rate, exit_reason)
+        except Exception as e:
+            logger.warning("Failed to log experience: %s", e)
         return True
 
     def _log_experience(self, trade: Trade, exit_rate: float, reason: str) -> None:
-        path = Path("user_data/logs/experience.json")
+        path = self._logs_dir / "experience.json"
         experiences = []
         if path.exists():
             try:
@@ -1046,13 +1075,14 @@ class CryptoFusionStrategy(IStrategy):
         # Duration in minutes
         duration_min = 0
         if trade.open_date_utc:
-            duration_min = round(
-                (datetime.utcnow() - trade.open_date_utc.replace(tzinfo=None)
-                 ).total_seconds() / 60
-            )
+            now = datetime.now(timezone.utc)
+            open_dt = trade.open_date_utc
+            if open_dt.tzinfo is None:
+                open_dt = open_dt.replace(tzinfo=timezone.utc)
+            duration_min = round((now - open_dt).total_seconds() / 60)
 
         record = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "pair": trade.pair,
             "action": "sell",
             "enter_tag": trade.enter_tag or "",
@@ -1071,13 +1101,12 @@ class CryptoFusionStrategy(IStrategy):
         if len(experiences) > self.EXPERIENCE_MAX_SIZE:
             experiences = experiences[-self.EXPERIENCE_MAX_SIZE:]
 
-        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(experiences, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
     def _learn_fusion_weights(self) -> None:
-        path = Path("user_data/logs/experience.json")
+        path = self._logs_dir / "experience.json"
         if not path.exists():
             return
 
@@ -1099,7 +1128,7 @@ class CryptoFusionStrategy(IStrategy):
         avg_win_pnl = np.mean([e["pnl_pct"] for e in wins])
         avg_loss_pnl = np.mean([abs(e["pnl_pct"]) for e in losses])
 
-        w = dict(self.DEFAULT_FUSION_WEIGHTS)
+        w = self._load_fusion_weights()
 
         # Adjust bias based on win rate
         if win_rate > 0.55:

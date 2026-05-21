@@ -87,8 +87,8 @@
     },
 
     "api_server": {
-        "enabled": true,
-        "listen_ip_address": "0.0.0.0",
+        "enabled": false,
+        "listen_ip_address": "127.0.0.1",
         "listen_port": 8080,
         "verbosity": "error",
         "enable_openapi": false,
@@ -113,7 +113,7 @@
             "include_corr_pairlist": ["BTC/KRW", "ETH/KRW"],
             "label_period_candles": 24,
             "include_shifted_candles": 2,
-            "DI_threshold": 0.9,
+            "DI_threshold": 0.7,
             "weight_factor": 0.9,
             "indicator_periods_candles": [10, 20, 60]
         },
