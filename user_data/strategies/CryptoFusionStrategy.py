@@ -684,6 +684,24 @@ class CryptoFusionStrategy(IStrategy):
         obv = ta.OBV(dataframe)
         dataframe[f"%-obv_slope-{period}"] = obv.diff(period)
 
+        # VWAP distance: price relative to volume-weighted average
+        typical = (dataframe["high"] + dataframe["low"] + dataframe["close"]) / 3
+        cum_tp_vol = (typical * dataframe["volume"]).rolling(period).sum()
+        cum_vol = dataframe["volume"].rolling(period).sum().replace(0, np.nan)
+        vwap = cum_tp_vol / cum_vol
+        dataframe[f"%-vwap_dist-{period}"] = (
+            (dataframe["close"] - vwap) / vwap
+        )
+
+        # Momentum consistency: % of candles that were bullish in the period
+        bullish_candle = (dataframe["close"] > dataframe["open"]).astype(float)
+        dataframe[f"%-bull_ratio-{period}"] = bullish_candle.rolling(period).mean()
+
+        # Volume-price trend divergence
+        price_dir = np.sign(dataframe["close"].diff(period))
+        vol_dir = np.sign(dataframe["volume"].diff(period))
+        dataframe[f"%-vp_divergence-{period}"] = (price_dir * vol_dir)
+
         return dataframe
 
     def feature_engineering_expand_basic(
@@ -703,6 +721,13 @@ class CryptoFusionStrategy(IStrategy):
         # Time features
         dataframe["%-hour_of_day"] = dataframe["date"].dt.hour
         dataframe["%-day_of_week"] = dataframe["date"].dt.dayofweek
+
+        # Trading session (KST = UTC+9): Asia 9-18, Europe 16-01, US 22-07
+        hour_utc = dataframe["date"].dt.hour
+        dataframe["%-session_asia"] = ((hour_utc >= 0) & (hour_utc < 9)).astype(float)
+        dataframe["%-session_europe"] = ((hour_utc >= 7) & (hour_utc < 16)).astype(float)
+        dataframe["%-session_us"] = ((hour_utc >= 13) & (hour_utc < 22)).astype(float)
+        dataframe["%-is_weekend"] = (dataframe["date"].dt.dayofweek >= 5).astype(float)
 
         # Momentum acceleration (2nd derivative)
         ret = dataframe["close"].pct_change()
@@ -724,6 +749,18 @@ class CryptoFusionStrategy(IStrategy):
         vol_ma_240 = dataframe["volume"].rolling(240).mean().replace(0, np.nan)
         dataframe["%-vol_surge"] = (dataframe["volume"] / vol_ma_240).clip(upper=5)
 
+        # Consecutive candle direction streak
+        direction = (dataframe["close"] > dataframe["open"]).astype(int)
+        streak = direction.groupby(
+            (direction != direction.shift()).cumsum()
+        ).cumcount() + 1
+        dataframe["%-bull_streak"] = np.where(direction == 1, streak, -streak)
+
+        # High-low range relative to recent average
+        hl_range = dataframe["high"] - dataframe["low"]
+        hl_avg = hl_range.rolling(60).mean().replace(0, np.nan)
+        dataframe["%-range_expansion"] = hl_range / hl_avg
+
         return dataframe
 
     def set_freqai_targets(
@@ -734,8 +771,24 @@ class CryptoFusionStrategy(IStrategy):
         ).get("label_period_candles", 24)
 
         future_close = dataframe["close"].shift(-label_period)
+        pct_change = (future_close - dataframe["close"]) / dataframe["close"]
+
+        # Fee-aware target: Upbit ~0.05% per trade × 2 (entry + exit)
+        net_pct = pct_change - 0.001
+
+        # Multi-class: strong signals get higher confidence targets
         dataframe["&-direction"] = np.where(
-            future_close > dataframe["close"], 1.0, 0.0
+            net_pct > 0.02, 1.0,        # strong up (>2% net)
+            np.where(
+                net_pct > 0.005, 0.75,   # moderate up (>0.5% net)
+                np.where(
+                    net_pct > 0, 0.6,    # weak up (profitable after fees)
+                    np.where(
+                        net_pct > -0.01, 0.4,  # weak down
+                        0.0,                    # strong down (<-1%)
+                    )
+                )
+            )
         )
         return dataframe
 
@@ -973,6 +1026,31 @@ class CryptoFusionStrategy(IStrategy):
 
         pnl_pct = ((exit_rate - trade.open_rate) / trade.open_rate) * 100
 
+        # Capture market context at exit time
+        context = {}
+        try:
+            df, _ = self.dp.get_analyzed_dataframe(trade.pair, self.timeframe)
+            if df is not None and not df.empty:
+                last = df.iloc[-1]
+                context = {
+                    "regime": str(last.get("hmm_state", "unknown")),
+                    "fusion_prob": round(float(last.get("fusion_prob", 0.5)), 3),
+                    "ta_score": round(float(last.get("ta_score", 0)), 1),
+                    "rsi": round(float(last.get("rsi_14", 50)), 1),
+                    "breakout": int(last.get("breakout_signal", 0)),
+                    "atr_ratio": round(float(last.get("atr_ratio", 1.0)), 2),
+                }
+        except Exception:
+            pass
+
+        # Duration in minutes
+        duration_min = 0
+        if trade.open_date_utc:
+            duration_min = round(
+                (datetime.utcnow() - trade.open_date_utc.replace(tzinfo=None)
+                 ).total_seconds() / 60
+            )
+
         record = {
             "timestamp": datetime.utcnow().isoformat(),
             "pair": trade.pair,
@@ -984,6 +1062,8 @@ class CryptoFusionStrategy(IStrategy):
             "pnl_pct": round(pnl_pct, 3),
             "outcome": "win" if pnl_pct > 0 else "loss",
             "stake_amount": float(trade.stake_amount),
+            "duration_min": duration_min,
+            "context": context,
         }
         experiences.append(record)
 
@@ -1052,7 +1132,35 @@ class CryptoFusionStrategy(IStrategy):
             elif pf["wr"] < 0.35:
                 w["breakout"] = max(w["breakout"] - 0.02, 0.05)
 
-        # Risk-reward ratio adjustment: if avg_win/avg_loss < 1, tighten entries
+        # Regime-based learning: adjust regime weight based on accuracy
+        regime_trades = [e for e in experiences if e.get("context", {}).get("regime")]
+        if len(regime_trades) >= 10:
+            bull_trades = [e for e in regime_trades
+                          if e["context"]["regime"] == "bull"]
+            bear_trades = [e for e in regime_trades
+                          if e["context"]["regime"] == "bear"]
+            if len(bull_trades) >= 5:
+                bull_wr = sum(1 for e in bull_trades
+                             if e["outcome"] == "win") / len(bull_trades)
+                if bull_wr > 0.6:
+                    w["regime"] = min(w["regime"] + 0.02, 0.30)
+                elif bull_wr < 0.4:
+                    w["regime"] = max(w["regime"] - 0.02, 0.05)
+            if len(bear_trades) >= 3 and all(
+                e["outcome"] == "loss" for e in bear_trades[-3:]
+            ):
+                w["bias"] = min(w["bias"] + 0.05, 0.1)
+
+        # Duration-based insight: if short trades lose more, tighten
+        short_trades = [e for e in experiences
+                        if e.get("duration_min", 999) < 30]
+        if len(short_trades) >= 10:
+            short_wr = sum(1 for e in short_trades
+                          if e["outcome"] == "win") / len(short_trades)
+            if short_wr < 0.35:
+                w["bias"] = min(w["bias"] + 0.02, 0.1)
+
+        # Risk-reward ratio adjustment
         if avg_loss_pnl > 0:
             rr_ratio = avg_win_pnl / avg_loss_pnl
             if rr_ratio < 0.8:
