@@ -49,6 +49,19 @@ class CryptoFusionStrategy(IStrategy):
     use_exit_signal = True
     exit_profit_only = False
 
+    # --- Protections (drawdown + cooldown) ---
+    @property
+    def protections(self):
+        return [
+            {"method": "MaxDrawdown", "lookback_period_candles": 288,
+             "trade_limit": 4, "stop_duration_candles": 60,
+             "max_allowed_drawdown": 0.1},
+            {"method": "StoplossGuard", "lookback_period_candles": 60,
+             "trade_limit": 3, "stop_duration_candles": 30,
+             "only_per_pair": False},
+            {"method": "CooldownPeriod", "stop_duration_candles": 5},
+        ]
+
     # --- ROI (time-based take-profit, ported from risk_manager.py ROI_TABLE) ---
     minimal_roi = {
         "0": 0.05,

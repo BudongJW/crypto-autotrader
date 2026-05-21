@@ -9,27 +9,6 @@
     "dry_run_wallet": 1000000,
     "cancel_open_orders_on_exit": true,
 
-    "protections": [
-        {
-            "method": "MaxDrawdown",
-            "lookback_period_candles": 288,
-            "trade_limit": 4,
-            "stop_duration_candles": 60,
-            "max_allowed_drawdown": 0.1
-        },
-        {
-            "method": "StoplossGuard",
-            "lookback_period_candles": 60,
-            "trade_limit": 3,
-            "stop_duration_candles": 30,
-            "only_per_pair": false
-        },
-        {
-            "method": "CooldownPeriod",
-            "stop_duration_candles": 5
-        }
-    ],
-
     "timeframe": "5m",
     "strategy": "CryptoFusionStrategy",
 
