@@ -180,6 +180,8 @@ class CryptoFusionStrategy(IStrategy):
     # =========================================================================
     # Heartbeat throttle — emit one diagnostic line per N seconds
     HEARTBEAT_INTERVAL_SECONDS = 60
+    # Suppress repeated FreqAI fallback warnings to one per pair per hour
+    FREQAI_WARN_THROTTLE_SECONDS = 3600
 
     def __init__(self, config: dict) -> None:
         super().__init__(config)
@@ -189,6 +191,7 @@ class CryptoFusionStrategy(IStrategy):
         self._hmm_cache_df: pd.DataFrame | None = None
         self._last_fusion_learn: datetime | None = None
         self._last_heartbeat: datetime | None = None
+        self._freqai_warn_last: dict[str, datetime] = {}
 
         user_data = Path(config.get("user_data_dir", "user_data"))
         self._logs_dir = user_data / "logs"
@@ -255,26 +258,12 @@ class CryptoFusionStrategy(IStrategy):
         if self.freqai_info.get("enabled", False):
             try:
                 dataframe = self.freqai.start(dataframe, metadata, self)
-            except KeyError as e:
-                # FreqAI raises KeyError when its historic_data cache is
-                # missing the current pair. This happens when:
-                # (a) the trading whitelist contains a pair that wasn't in
-                #     FreqAI's initial download set (e.g. dynamic pairlist),
-                # (b) the FreqAI model was loaded from a different identifier
-                #     and the cache wasn't seeded.
-                # Falling back to neutral ML signal keeps the other 5 layers
-                # (Volatility, TA, HMM, BTC sentiment, breakout) voting.
-                logger.warning(
-                    "FreqAI cache miss for %s (%s) — using neutral fallback",
-                    metadata.get("pair", "?"), e,
-                )
-                dataframe["&-direction"] = 0.5
-                dataframe["do_predict"] = 1
-            except Exception as e:  # noqa: BLE001 — never crash the loop
-                logger.warning(
-                    "FreqAI start raised %s for %s — using neutral fallback",
-                    type(e).__name__, metadata.get("pair", "?"),
-                )
+            except (KeyError, Exception) as e:  # noqa: BLE001
+                # FreqAI raises KeyError on historic_data cache misses
+                # (dynamic pairlist or stale identifier) and various other
+                # exceptions on transient issues. Fall back to neutral ML
+                # signal so the remaining 5 fusion layers keep voting.
+                self._warn_freqai_fallback(metadata.get("pair", "?"), e)
                 dataframe["&-direction"] = 0.5
                 dataframe["do_predict"] = 1
         else:
@@ -902,6 +891,22 @@ class CryptoFusionStrategy(IStrategy):
     def _save_fusion_weights(self, weights: dict) -> None:
         path = self._logs_dir / "fusion_weights.json"
         path.write_text(json.dumps(weights, indent=2), encoding="utf-8")
+
+    # =========================================================================
+    # FreqAI fallback warning — rate-limited (1 per pair per hour)
+    # =========================================================================
+    def _warn_freqai_fallback(self, pair: str, exc: Exception) -> None:
+        now = datetime.now(timezone.utc)
+        last = self._freqai_warn_last.get(pair)
+        if last is None or (now - last).total_seconds() \
+                >= self.FREQAI_WARN_THROTTLE_SECONDS:
+            logger.warning(
+                "FreqAI fallback for %s (%s: %s) — neutral ML signal used. "
+                "Suppressing repeats for the next %ds.",
+                pair, type(exc).__name__, exc,
+                self.FREQAI_WARN_THROTTLE_SECONDS,
+            )
+            self._freqai_warn_last[pair] = now
 
     # =========================================================================
     # Heartbeat — operational visibility (1 line/min)
