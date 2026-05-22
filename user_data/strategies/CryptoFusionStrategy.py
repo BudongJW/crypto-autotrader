@@ -225,10 +225,15 @@ class CryptoFusionStrategy(IStrategy):
         ]
 
     def _btc_bearish_tf_count(self) -> int:
-        """Count BTC TFs where close < SMA20 (NFI-style multi-TF agreement)."""
+        """Count BTC TFs where close < SMA20 (NFI-style multi-TF agreement).
+
+        Uses ``get_pair_dataframe`` (raw OHLCV) so this works even if BTC is
+        not in the trading whitelist — only its presence in
+        ``informative_pairs()`` is required.
+        """
         bearish = 0
         for tf in self.BTC_MULTI_TFS:
-            df, _ = self.dp.get_analyzed_dataframe("BTC/KRW", tf)
+            df = self.dp.get_pair_dataframe("BTC/KRW", tf)
             if df is None or len(df) < 20:
                 continue
             sma20 = df["close"].rolling(20).mean().iloc[-1]
@@ -501,7 +506,9 @@ class CryptoFusionStrategy(IStrategy):
                             time_in_force, current_time, entry_tag, side,
                             **kwargs) -> bool:
         if pair != "BTC/KRW":
-            btc_df, _ = self.dp.get_analyzed_dataframe("BTC/KRW", self.timeframe)
+            # Use raw OHLCV so this guard works regardless of whether BTC is
+            # in the trading whitelist (only informative_pairs membership needed).
+            btc_df = self.dp.get_pair_dataframe("BTC/KRW", self.timeframe)
             if btc_df is not None and len(btc_df) > 288:
                 btc_ret = btc_df["close"].pct_change()
                 recent_vol = btc_ret.tail(12).std()
@@ -519,7 +526,7 @@ class CryptoFusionStrategy(IStrategy):
             return False
 
         if pair not in ("BTC/KRW", "ETH/KRW"):
-            eth_df, _ = self.dp.get_analyzed_dataframe("ETH/KRW", "1h")
+            eth_df = self.dp.get_pair_dataframe("ETH/KRW", "1h")
             if eth_df is not None and len(eth_df) > 20:
                 sma20 = eth_df["close"].rolling(20).mean().iloc[-1]
                 if eth_df["close"].iloc[-1] < sma20 * 0.98:
@@ -561,6 +568,26 @@ class CryptoFusionStrategy(IStrategy):
                     f"{metrics['spread']:.4f}" if metrics.get("spread") else "n/a",
                 )
                 return False
+
+        # All 5 entry gates passed — log the decision context so we can later
+        # attribute each accepted entry to its signal mix.
+        try:
+            df = self.dp.get_pair_dataframe(pair, self.timeframe)
+            if df is not None and not df.empty:
+                last = df.iloc[-1]
+                fp = float(last.get("fusion_prob", float("nan")))
+                ta = float(last.get("ta_score", float("nan")))
+                hmm = str(last.get("hmm_state", "?"))
+            else:
+                fp = ta = float("nan")
+                hmm = "?"
+        except Exception:  # noqa: BLE001
+            fp = ta = float("nan")
+            hmm = "?"
+        logger.info(
+            "ENTRY PASSED %s tag=%s rate=%.0f fusion=%.3f ta=%.1f hmm=%s",
+            pair, entry_tag or "-", rate, fp, ta, hmm,
+        )
         return True
 
     # =========================================================================
@@ -799,7 +826,9 @@ class CryptoFusionStrategy(IStrategy):
         if pair == self.HMM_SOURCE_PAIR:
             btc_df = dataframe
         else:
-            btc_df, _ = self.dp.get_analyzed_dataframe(
+            # Raw OHLCV is sufficient for HMM training (pct_change + std);
+            # decouples HMM source from trading whitelist membership.
+            btc_df = self.dp.get_pair_dataframe(
                 self.HMM_SOURCE_PAIR, self.timeframe
             )
             if btc_df is None or btc_df.empty:
@@ -837,7 +866,7 @@ class CryptoFusionStrategy(IStrategy):
     # =========================================================================
     def _compute_btc_sentiment(self, dataframe: DataFrame) -> np.ndarray:
         try:
-            btc_df, _ = self.dp.get_analyzed_dataframe("BTC/KRW", self.timeframe)
+            btc_df = self.dp.get_pair_dataframe("BTC/KRW", self.timeframe)
             if btc_df is None or len(btc_df) <= 288:
                 return np.zeros(len(dataframe))
 
@@ -845,7 +874,7 @@ class CryptoFusionStrategy(IStrategy):
             btc_ret_24h = btc_df["close"].pct_change(288)
             base = (btc_ret_1h * 10 + btc_ret_24h * 5).clip(-1, 1)
 
-            btc_1h, _ = self.dp.get_analyzed_dataframe("BTC/KRW", "1h")
+            btc_1h = self.dp.get_pair_dataframe("BTC/KRW", "1h")
             trend = pd.Series(0.0, index=base.index)
             if btc_1h is not None and len(btc_1h) > 20:
                 sma20 = btc_1h["close"].rolling(20).mean()
