@@ -49,6 +49,7 @@ try:
     from .experience_log import (
         append_experience, load_experiences, migrate_legacy_json,
     )
+    from .validation import is_recent_degraded
 except ImportError:
     # Freqtrade loads strategies as top-level modules (no package)
     from fusion_lib import (  # type: ignore
@@ -59,6 +60,7 @@ except ImportError:
     from experience_log import (  # type: ignore
         append_experience, load_experiences, migrate_legacy_json,
     )
+    from validation import is_recent_degraded  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -165,12 +167,32 @@ class CryptoFusionStrategy(IStrategy):
     # =========================================================================
     # Informative pairs
     # =========================================================================
+    BTC_MULTI_TFS = ("5m", "15m", "1h", "4h", "1d")
+    # Block alt entry when BTC is bearish on at least this many of the TFs above
+    BTC_BEARISH_BLOCK_THRESHOLD = 3
+
     def informative_pairs(self):
         return [
-            ("BTC/KRW", self.timeframe),
+            ("BTC/KRW", "5m"),
+            ("BTC/KRW", "15m"),
             ("BTC/KRW", "1h"),
+            ("BTC/KRW", "4h"),
+            ("BTC/KRW", "1d"),
             ("ETH/KRW", "1h"),
         ]
+
+    def _btc_bearish_tf_count(self) -> int:
+        """Count BTC TFs where close < SMA20 (NFI-style multi-TF agreement)."""
+        bearish = 0
+        for tf in self.BTC_MULTI_TFS:
+            df, _ = self.dp.get_analyzed_dataframe("BTC/KRW", tf)
+            if df is None or len(df) < 20:
+                continue
+            sma20 = df["close"].rolling(20).mean().iloc[-1]
+            last_close = df["close"].iloc[-1]
+            if pd.notna(sma20) and last_close < sma20:
+                bearish += 1
+        return bearish
 
     # =========================================================================
     # MAIN
@@ -349,6 +371,18 @@ class CryptoFusionStrategy(IStrategy):
                 if eth_df["close"].iloc[-1] < sma20 * 0.98:
                     logger.info("ETH 1h downtrend, blocking alt entry %s", pair)
                     return False
+
+        # BTC multi-timeframe agreement (NFI-pattern): block alt entry when BTC
+        # is below SMA20 on >= threshold of {5m, 15m, 1h, 4h, 1d}. BTC itself
+        # is exempt since blocking it would be self-referential.
+        if pair != "BTC/KRW":
+            bearish = self._btc_bearish_tf_count()
+            if bearish >= self.BTC_BEARISH_BLOCK_THRESHOLD:
+                logger.info(
+                    "BTC bearish on %d/%d TFs, blocking alt entry %s",
+                    bearish, len(self.BTC_MULTI_TFS), pair,
+                )
+                return False
         return True
 
     # =========================================================================
@@ -684,25 +718,50 @@ class CryptoFusionStrategy(IStrategy):
             logger.warning("Failed to log experience: %s", e)
         return True
 
+    def _capture_signal_context(self, pair: str, at: datetime | None) -> dict:
+        """
+        Snapshot fusion-layer signal values for a trade at a given timestamp.
+        Used for both entry context (purged-CV replay) and exit context (regime
+        attribution). Returns empty dict if the dataframe row is unavailable.
+        """
+        try:
+            df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+            if df is None or df.empty or "date" not in df.columns:
+                return {}
+            if at is not None:
+                if at.tzinfo is None:
+                    at = at.replace(tzinfo=timezone.utc)
+                mask = df["date"] <= at
+                if not mask.any():
+                    return {}
+                row = df.loc[mask].iloc[-1]
+            else:
+                row = df.iloc[-1]
+            return {
+                "regime": str(row.get("hmm_state", "unknown")),
+                "fusion_prob": round(float(row.get("fusion_prob", 0.5)), 4),
+                "ta_score": round(float(row.get("ta_score", 0.0)), 1),
+                "lgbm_prob": round(float(row.get("&-direction", 0.5)), 4),
+                "breakout_signal": int(row.get("breakout_signal", 0)),
+                "hmm_confidence": round(float(row.get("hmm_confidence", 0.5)), 3),
+                "rsi": round(float(row.get("rsi_14", 50.0)), 1),
+                "atr_ratio": round(float(row.get("atr_ratio", 1.0)), 2),
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Context capture failed for %s @ %s: %s", pair, at, e)
+            return {}
+
     def _log_experience(self, trade: Trade, exit_rate: float, reason: str) -> None:
         path = self._logs_dir / "experience.jsonl"
         pnl_pct = ((exit_rate - trade.open_rate) / trade.open_rate) * 100
 
-        context = {}
-        try:
-            df, _ = self.dp.get_analyzed_dataframe(trade.pair, self.timeframe)
-            if df is not None and not df.empty:
-                last = df.iloc[-1]
-                context = {
-                    "regime": str(last.get("hmm_state", "unknown")),
-                    "fusion_prob": round(float(last.get("fusion_prob", 0.5)), 3),
-                    "ta_score": round(float(last.get("ta_score", 0)), 1),
-                    "rsi": round(float(last.get("rsi_14", 50)), 1),
-                    "breakout": int(last.get("breakout_signal", 0)),
-                    "atr_ratio": round(float(last.get("atr_ratio", 1.0)), 2),
-                }
-        except Exception as e:  # noqa: BLE001
-            logger.debug("Context capture failed: %s", e)
+        # Entry-time signal context: enables purged-CV replay of weight
+        # candidates. Falls back to {} if open_date or dataframe is missing.
+        context_entry = self._capture_signal_context(
+            trade.pair, trade.open_date_utc,
+        )
+        # Exit-time context kept for regime attribution / diagnostics.
+        context_exit = self._capture_signal_context(trade.pair, None)
 
         duration_min = 0
         if trade.open_date_utc:
@@ -725,18 +784,51 @@ class CryptoFusionStrategy(IStrategy):
             "outcome": "win" if pnl_pct > 0 else "loss",
             "stake_amount": float(trade.stake_amount),
             "duration_min": duration_min,
-            "context": context,
+            "context_entry": context_entry,
+            "context": context_exit,   # back-compat alias for prior consumers
         }
         append_experience(path, record)
 
     # =========================================================================
     # Adaptive learning
     # =========================================================================
+    # Purged k-fold settings for adaptive learning guard
+    VALIDATION_N_SPLITS = 5
+    VALIDATION_SIGMA_THRESHOLD = 1.0
+    VALIDATION_MIN_RECORDS = 30
+
     def _learn_fusion_weights(self) -> None:
         path = self._logs_dir / "experience.jsonl"
         experiences = load_experiences(path, max_records=self.EXPERIENCE_MAX_SIZE)
         if len(experiences) < 20:
             return
+
+        # Purged k-fold gate: if the most recent fold's OOS Sharpe has dropped
+        # > 1σ below the prior-fold median, the current weight regime is
+        # underperforming OOS. Skip the heuristic update so the learner does
+        # not double-down on a degraded model.
+        degraded, diag = is_recent_degraded(
+            experiences,
+            n_splits=self.VALIDATION_N_SPLITS,
+            sigma_threshold=self.VALIDATION_SIGMA_THRESHOLD,
+            min_records=self.VALIDATION_MIN_RECORDS,
+        )
+        if degraded:
+            logger.warning(
+                "Adaptive weight update skipped — recent fold Sharpe %.2f < "
+                "threshold %.2f (median %.2f, σ %.2f, %d records)",
+                diag.get("recent_sharpe", 0.0),
+                diag.get("threshold", 0.0),
+                diag.get("median_prior", 0.0),
+                diag.get("std_prior", 0.0),
+                diag.get("n_records", 0),
+            )
+            return
+        if diag.get("checked"):
+            logger.info(
+                "Validation OK — recent fold Sharpe %.2f >= threshold %.2f",
+                diag.get("recent_sharpe", 0.0), diag.get("threshold", 0.0),
+            )
 
         wins = [e for e in experiences if e.get("outcome") == "win"]
         losses = [e for e in experiences if e.get("outcome") == "loss"]

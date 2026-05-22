@@ -42,19 +42,13 @@
             "enableRateLimit": true
         },
         "ccxt_async_config": {},
-        "pair_whitelist": [
-            "BTC/KRW",
-            "ETH/KRW",
-            "XRP/KRW",
-            "SOL/KRW",
-            "DOGE/KRW",
-            "ADA/KRW",
-            "AVAX/KRW",
-            "DOT/KRW",
-            "LINK/KRW",
-            "SHIB/KRW"
-        ],
-        "pair_blacklist": []
+        "pair_whitelist": [],
+        "pair_blacklist": [
+            "USDT/KRW",
+            "USDC/KRW",
+            "DAI/KRW",
+            "BUSD/KRW"
+        ]
     },
 
     "entry_pricing": {
@@ -76,7 +70,37 @@
 
     "pairlists": [
         {
-            "method": "StaticPairList"
+            "method": "VolumePairList",
+            "number_assets": 30,
+            "sort_key": "quoteVolume",
+            "min_value": 5000000000,
+            "refresh_period": 1800
+        },
+        {"method": "AgeFilter", "min_days_listed": 30},
+        {"method": "PriceFilter", "low_price_ratio": 0.001},
+        {
+            "method": "SpreadFilter",
+            "max_spread_ratio": 0.005
+        },
+        {
+            "method": "RangeStabilityFilter",
+            "lookback_days": 7,
+            "min_rate_of_change": 0.03,
+            "refresh_period": 1800
+        },
+        {
+            "method": "VolatilityFilter",
+            "lookback_days": 7,
+            "min_volatility": 0.02,
+            "max_volatility": 0.6,
+            "refresh_period": 1800
+        },
+        {"method": "PrecisionFilter"},
+        {
+            "method": "VolumePairList",
+            "number_assets": 15,
+            "sort_key": "quoteVolume",
+            "refresh_period": 1800
         }
     ],
 

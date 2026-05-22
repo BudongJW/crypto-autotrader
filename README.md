@@ -53,7 +53,7 @@ docker compose up -d
 pip install pytest pandas numpy hmmlearn scikit-learn
 pytest tests/ -v
 ```
-순수 함수(`fusion_lib`, `experience_log`)와 status 추출 로직을 검증. freqtrade/talib 설치 불필요.
+100건 단위테스트 (fusion·experience·validation·config·status·HMM). freqtrade/talib 설치 불필요.
 
 ## 전략 구조
 
@@ -64,10 +64,20 @@ pytest tests/ -v
 | LightGBM | FreqAI, 24캔들(2h) 방향 예측 — 연속 sigmoid 타겟 | 2 |
 | HMM Regime | **BTC/KRW 단일 모델**, 모든 페어에 broadcast | 3 |
 | Signal Fusion | 시그모이드 가중 결합 | 3 |
-| Experience Buffer | JSONL 거래 이력, 6시간 주기 fusion weight 재학습 | 3 |
+| Experience Buffer + Purged-CV gate | JSONL 거래 이력, 6시간 주기 fusion weight 재학습 (degradation 감지 시 자동 skip) | 3 |
+
+## 진입 가드 (모두 통과해야 매수)
+1. BTC turbulence (24h 변동성 대비 1h 변동성 1.5배 초과 시 차단)
+2. 동시 알트 포지션 ≤ 3
+3. ETH 1h SMA20 트렌드 (close < SMA20 × 0.98이면 알트 차단)
+4. **BTC 5m/15m/1h/4h/1d 멀티 TF 합의** — 3개 이상 TF에서 BTC가 SMA20 아래면 알트 차단 (NFI 패턴)
 
 ## 거래 대상
-Upbit KRW 마켓 상위 10종목: BTC, ETH, XRP, SOL, DOGE, ADA, AVAX, DOT, LINK, SHIB
+**라이브**: VolumePairList + 6단 필터로 Upbit KRW 전체에서 동적 선정 (top 15).
+- 필터: AgeFilter(30일+), PriceFilter, SpreadFilter(0.5%↓), RangeStability, VolatilityFilter, PrecisionFilter
+- blacklist: 스테이블코인 (USDT/USDC/DAI/BUSD)
+
+**백테스트**: 재현성을 위해 10종 핀 (BTC, ETH, XRP, SOL, DOGE, ADA, AVAX, DOT, LINK, SHIB)
 
 ## GitHub Actions
 - `autotrader.yml` — 4시간 간격 cron. 라이브 전환은 `workflow_dispatch`에서 `live_trading=I_UNDERSTAND_THE_RISK`로만 가능 (cron 트리거는 항상 dry-run).
