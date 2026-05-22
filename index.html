@@ -3,115 +3,346 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Crypto AutoTrader — Dashboard</title>
+<title>Crypto AutoTrader — Live Dashboard</title>
 <style>
-  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff; }
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --green: #3fb950; --red: #f85149; --yellow: #d29922;
+    --blue: #58a6ff; --purple: #bc8cff;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
-  h1 { font-size: 1.5rem; margin-bottom: 8px; }
-  .meta { color: #8b949e; font-size: 0.85rem; margin-bottom: 24px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-  .card h3 { font-size: 0.8rem; color: #8b949e; text-transform: uppercase; margin-bottom: 8px; }
-  .card .value { font-size: 1.8rem; font-weight: 700; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); padding: 20px;
+    font-size: 14px;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 20px; }
+  .meta .ok { color: var(--green); }
+  .meta .stale { color: var(--yellow); }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+  }
+  .card h3 {
+    font-size: 0.7rem; color: var(--muted); text-transform: uppercase;
+    margin-bottom: 6px; letter-spacing: 0.5px;
+  }
+  .card .value { font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+  .card .sub { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
   .positive { color: var(--green); }
   .negative { color: var(--red); }
   .neutral { color: var(--yellow); }
-  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
-  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-  th { background: #1c2129; color: #8b949e; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
-  .tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; background: #1f6feb22; color: var(--blue); }
-  .loading { text-align: center; padding: 40px; color: #8b949e; }
-  section { margin-bottom: 32px; }
-  section h2 { font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  table {
+    width: 100%; border-collapse: collapse; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    margin-bottom: 20px; font-size: 0.85rem;
+  }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: #1c2129; color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar {
+    display: inline-block; height: 8px; border-radius: 2px;
+    background: var(--blue); vertical-align: middle; margin-right: 4px;
+  }
+  .tag {
+    display: inline-block; padding: 1px 6px; border-radius: 10px;
+    font-size: 0.7rem; font-weight: 600;
+  }
+  .tag.bull { background: #3fb95022; color: var(--green); }
+  .tag.bear { background: #f8514922; color: var(--red); }
+  .tag.sideways { background: #d2992222; color: var(--yellow); }
+  .tag.blocked { background: #f8514922; color: var(--red); }
+  .tag.passed { background: #3fb95022; color: var(--green); }
+  .tag.dca { background: #bc8cff22; color: var(--purple); }
+  .tag.exit { background: #58a6ff22; color: var(--blue); }
+  section { margin-bottom: 28px; }
+  section h2 {
+    font-size: 1rem; margin-bottom: 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border); display: flex;
+    align-items: baseline; justify-content: space-between;
+  }
+  section h2 .note { font-size: 0.75rem; color: var(--muted); font-weight: 400; }
+  .loading { text-align: center; padding: 30px; color: var(--muted); }
+  .ts { color: var(--muted); font-size: 0.75rem; }
+  .threshold-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px; font-size: 0.8rem;
+  }
+  .threshold-grid div { background: #1c2129; padding: 6px 10px; border-radius: 4px; }
+  .threshold-grid b { color: var(--blue); }
 </style>
 </head>
 <body>
-  <h1>Crypto AutoTrader</h1>
-  <p class="meta">Freqtrade + Upbit KRW | <span id="updated">loading...</span></p>
-
-  <div class="grid">
-    <div class="card"><h3>Mode</h3><div class="value neutral" id="mode">—</div></div>
-    <div class="card"><h3>Open Trades</h3><div class="value" id="open-count">—</div></div>
-    <div class="card"><h3>Total Trades</h3><div class="value" id="total-trades">—</div></div>
-    <div class="card"><h3>Win Rate</h3><div class="value" id="win-rate">—</div></div>
-    <div class="card"><h3>Avg Profit</h3><div class="value" id="avg-profit">—</div></div>
-    <div class="card"><h3>Total P&L</h3><div class="value" id="total-pnl">—</div></div>
-    <div class="card"><h3>Best Trade</h3><div class="value positive" id="best-trade">—</div></div>
-    <div class="card"><h3>Max Drawdown</h3><div class="value negative" id="max-dd">—</div></div>
-  </div>
+  <h1>Crypto AutoTrader — Live</h1>
+  <p class="meta">
+    Freqtrade + Upbit KRW · 6-layer fusion · 15분 자동 갱신 |
+    status: <span id="updated">loading...</span> |
+    mode: <span id="mode">—</span>
+  </p>
 
   <section>
-    <h2>Open Positions</h2>
+    <h2>봇 상태 <span class="note" id="heartbeat-note">heartbeat n/a</span></h2>
+    <div class="grid">
+      <div class="card"><h3>BTC Close</h3>
+        <div class="value" id="btc-close">—</div>
+        <div class="sub" id="btc-state">regime: ?</div>
+      </div>
+      <div class="card"><h3>HMM Model</h3>
+        <div class="value" id="hmm-model">—</div>
+        <div class="sub" id="hmm-conf">—</div>
+      </div>
+      <div class="card"><h3>BTC 멀티 TF</h3>
+        <div class="value" id="btc-bearish">—</div>
+        <div class="sub">5m/15m/1h/4h/1d 중 bearish</div>
+      </div>
+      <div class="card"><h3>Orderbook</h3>
+        <div class="value" id="orderbook-status">—</div>
+        <div class="sub">Upbit 15호가 도달성</div>
+      </div>
+      <div class="card"><h3>Experiences</h3>
+        <div class="value" id="exp-count">—</div>
+        <div class="sub">Kelly fully activates at 30</div>
+      </div>
+      <div class="card"><h3>Open Trades</h3>
+        <div class="value" id="open-count">—</div>
+        <div class="sub" id="total-trades-sub">— closed</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>임계값 <span class="note">실시간 strategy_state.json 기반</span></h2>
+    <div class="threshold-grid" id="thresholds">—</div>
+  </section>
+
+  <section>
+    <h2>페어별 신호 <span class="note">fusion ≥ buy 임계면 진입 후보</span></h2>
     <table>
-      <thead><tr><th>Pair</th><th>Stake (KRW)</th><th>Open Rate</th><th>Open Date</th><th>Tag</th></tr></thead>
+      <thead><tr>
+        <th>Pair</th>
+        <th class="num">fusion_prob</th>
+        <th class="num">ta_score</th>
+        <th class="num">lgbm_prob</th>
+        <th>regime</th>
+        <th class="num">RSI</th>
+        <th class="num">ATR ratio</th>
+        <th>breakout</th>
+      </tr></thead>
+      <tbody id="per-pair-tbody"><tr><td colspan="8" class="loading">loading...</td></tr></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>최근 결정 이력 <span class="note">최근 30건 (block / pass / dca / exit)</span></h2>
+    <table>
+      <thead><tr>
+        <th>시각</th>
+        <th>종류</th>
+        <th>Pair</th>
+        <th>세부</th>
+      </tr></thead>
+      <tbody id="decisions-tbody"><tr><td colspan="4" class="loading">loading...</td></tr></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>현재 포지션</h2>
+    <table>
+      <thead><tr>
+        <th>Pair</th><th class="num">Stake (KRW)</th><th class="num">Open Rate</th>
+        <th>Open Date</th><th>Tag</th>
+      </tr></thead>
       <tbody id="open-tbody"><tr><td colspan="5" class="loading">loading...</td></tr></tbody>
     </table>
   </section>
 
   <section>
-    <h2>Today's Closed Trades</h2>
+    <h2>오늘 체결</h2>
     <table>
-      <thead><tr><th>Pair</th><th>Profit %</th><th>Close Date</th><th>Exit Reason</th></tr></thead>
+      <thead><tr>
+        <th>Pair</th><th class="num">Profit %</th><th>Close Date</th><th>Exit Reason</th>
+      </tr></thead>
       <tbody id="closed-tbody"><tr><td colspan="4" class="loading">loading...</td></tr></tbody>
     </table>
   </section>
 
+  <section>
+    <h2>요약 통계</h2>
+    <div class="grid">
+      <div class="card"><h3>Total Trades</h3><div class="value" id="total-trades">—</div></div>
+      <div class="card"><h3>Win Rate</h3><div class="value" id="win-rate">—</div></div>
+      <div class="card"><h3>Avg Profit</h3><div class="value" id="avg-profit">—</div></div>
+      <div class="card"><h3>Total P&L</h3><div class="value" id="total-pnl">—</div></div>
+      <div class="card"><h3>Best Trade</h3><div class="value positive" id="best-trade">—</div></div>
+      <div class="card"><h3>Max Drawdown</h3><div class="value negative" id="max-dd">—</div></div>
+    </div>
+  </section>
+
 <script>
+function fmtKRW(n) { return n == null ? '—' : Number(n).toLocaleString() + '₩'; }
+function fmtTs(s) {
+  if (!s) return '—';
+  try { return new Date(s).toLocaleString('ko-KR'); } catch (e) { return s; }
+}
+function fmtPct(n, signed) {
+  if (n == null || isNaN(n)) return '—';
+  const v = Number(n).toFixed(2);
+  return (signed && n >= 0 ? '+' : '') + v + '%';
+}
+function regimeTag(r) {
+  const safe = (r || '?').toString();
+  const cls = ['bull','bear','sideways'].includes(safe) ? safe : 'sideways';
+  return `<span class="tag ${cls}">${safe}</span>`;
+}
+function decisionTag(k) {
+  const cls = ['blocked','passed','dca','exit'].includes(k) ? k : 'sideways';
+  return `<span class="tag ${cls}">${k}</span>`;
+}
+function fusionBar(v) {
+  if (v == null) return '—';
+  const pct = Math.round(v * 100);
+  const color = v >= 0.55 ? 'var(--green)' : v >= 0.45 ? 'var(--yellow)' : 'var(--red)';
+  return `<span class="bar" style="width:${Math.max(2, pct)}px;background:${color}"></span>${v.toFixed(3)}`;
+}
+
 async function load() {
   try {
     const res = await fetch('status.json?' + Date.now());
     const d = await res.json();
+    const s = d.strategy_state || {};
+    const available = s.available !== false && (s.heartbeat_at || s.per_pair);
 
-    document.getElementById('updated').textContent = new Date(d.updated_at).toLocaleString('ko-KR');
-    document.getElementById('mode').textContent = d.mode;
-    document.getElementById('open-count').textContent = d.open_trades.length;
-    document.getElementById('total-trades').textContent = d.total_trades;
-    document.getElementById('win-rate').textContent = d.win_rate + '%';
+    // Status bar
+    const updEl = document.getElementById('updated');
+    updEl.textContent = fmtTs(d.updated_at);
+    document.getElementById('mode').textContent = d.mode || '—';
 
-    const ap = document.getElementById('avg-profit');
-    ap.textContent = (d.total_profit_pct >= 0 ? '+' : '') + d.total_profit_pct + '%';
-    ap.className = 'value ' + (d.total_profit_pct >= 0 ? 'positive' : 'negative');
-
-    const pnl = document.getElementById('total-pnl');
-    const pnlVal = d.total_profit_krw || 0;
-    pnl.textContent = (pnlVal >= 0 ? '+' : '') + Number(pnlVal).toLocaleString() + '₩';
-    pnl.className = 'value ' + (pnlVal >= 0 ? 'positive' : 'negative');
-
-    document.getElementById('best-trade').textContent = '+' + (d.best_trade_pct || 0) + '%';
-    const mdd = document.getElementById('max-dd');
-    mdd.textContent = '-' + Number(d.max_drawdown_krw || 0).toLocaleString() + '₩';
-
-    const ot = document.getElementById('open-tbody');
-    if (d.open_trades.length === 0) {
-      ot.innerHTML = '<tr><td colspan="5" class="loading">No open positions</td></tr>';
+    // Heartbeat freshness
+    const hb = document.getElementById('heartbeat-note');
+    if (s.heartbeat_at) {
+      const ageSec = (Date.now() - new Date(s.heartbeat_at).getTime()) / 1000;
+      const cls = ageSec < 900 ? 'ok' : 'stale';
+      hb.innerHTML = `heartbeat: <span class="${cls}">${fmtTs(s.heartbeat_at)}</span> (${Math.round(ageSec/60)}분 전)`;
     } else {
-      ot.innerHTML = d.open_trades.map(t => `<tr>
+      hb.innerHTML = '<span class="stale">heartbeat 미수신 — 트레이더가 아직 시작 안 했거나 캐시 미복원</span>';
+    }
+
+    // Top status cards
+    document.getElementById('btc-close').textContent = s.btc_close ? fmtKRW(s.btc_close) : '—';
+    document.getElementById('btc-state').innerHTML = 'regime: ' + regimeTag(s.btc_hmm_state);
+    document.getElementById('hmm-model').textContent = s.hmm_model_loaded === true ? 'loaded' : 'none';
+    document.getElementById('hmm-conf').textContent = '학습 후 1h마다 갱신';
+    document.getElementById('btc-bearish').textContent =
+      s.btc_bearish_tfs != null ? `${s.btc_bearish_tfs}/${s.btc_total_tfs || 5}` : '—';
+    document.getElementById('orderbook-status').textContent = s.orderbook_status || '—';
+    document.getElementById('exp-count').textContent = s.experiences_count != null ? s.experiences_count : '—';
+    document.getElementById('open-count').textContent = (d.open_trades || []).length;
+    document.getElementById('total-trades-sub').textContent =
+      (d.closed_trades_today || []).length + ' closed today';
+
+    // Thresholds
+    const th = s.thresholds || {};
+    const fw = s.fusion_weights || {};
+    document.getElementById('thresholds').innerHTML = [
+      ['buy_fusion', th.buy_fusion],
+      ['buy_strong', th.buy_strong],
+      ['sell_fusion_exit', th.sell_fusion_exit],
+      ['sell_rsi_exit', th.sell_rsi_exit],
+      ['btc_bearish_block', `${th.btc_bearish_block}/5`],
+      ['orderbook_min_imb', th.orderbook_min_imb],
+      ['orderbook_max_spread', th.orderbook_max_spread],
+      ['weights ta/lgbm/breakout', `${fw.ta_score?.toFixed(2)}/${fw.lgbm_prob?.toFixed(2)}/${fw.breakout?.toFixed(2)}`],
+      ['weights btc/regime/bias', `${fw.btc_sentiment?.toFixed(2)}/${fw.regime?.toFixed(2)}/${fw.bias?.toFixed(2)}`],
+    ].map(([k, v]) => `<div>${k}: <b>${v != null && v !== 'undefined/undefined/undefined' ? v : '—'}</b></div>`).join('');
+
+    // Per-pair signals
+    const pp = s.per_pair || [];
+    const pt = document.getElementById('per-pair-tbody');
+    if (pp.length === 0) {
+      pt.innerHTML = '<tr><td colspan="8" class="loading">데이터 대기 — strategy_state.json 아직 없음</td></tr>';
+    } else {
+      pt.innerHTML = pp.map(r => `<tr>
+        <td><strong>${r.pair}</strong></td>
+        <td class="num">${fusionBar(r.fusion_prob)}</td>
+        <td class="num">${r.ta_score != null ? r.ta_score.toFixed(1) : '—'}</td>
+        <td class="num">${r.lgbm_prob != null ? r.lgbm_prob.toFixed(3) : '—'}</td>
+        <td>${regimeTag(r.regime)}</td>
+        <td class="num">${r.rsi != null ? r.rsi.toFixed(1) : '—'}</td>
+        <td class="num">${r.atr_ratio != null ? r.atr_ratio.toFixed(2) : '—'}</td>
+        <td>${r.breakout_signal === 1 ? '🚀' : '—'}</td>
+      </tr>`).join('');
+    }
+
+    // Recent decisions
+    const dec = s.recent_decisions || [];
+    const dt = document.getElementById('decisions-tbody');
+    if (dec.length === 0) {
+      dt.innerHTML = '<tr><td colspan="4" class="loading">기록된 결정 없음</td></tr>';
+    } else {
+      dt.innerHTML = [...dec].reverse().map(e => {
+        const { ts, kind, pair, ...rest } = e;
+        const details = Object.entries(rest).map(([k, v]) => `${k}=${v}`).join(' ');
+        return `<tr>
+          <td class="ts">${fmtTs(ts)}</td>
+          <td>${decisionTag(kind)}</td>
+          <td><strong>${pair}</strong></td>
+          <td>${details}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Open positions
+    const ot = document.getElementById('open-tbody');
+    const opens = d.open_trades || [];
+    if (opens.length === 0) {
+      ot.innerHTML = '<tr><td colspan="5" class="loading">현재 포지션 없음</td></tr>';
+    } else {
+      ot.innerHTML = opens.map(t => `<tr>
         <td><strong>${t.pair}</strong></td>
-        <td>${Number(t.stake).toLocaleString()}</td>
-        <td>${Number(t.open_rate).toLocaleString()}</td>
-        <td>${new Date(t.open_date).toLocaleString('ko-KR')}</td>
+        <td class="num">${Number(t.stake).toLocaleString()}</td>
+        <td class="num">${Number(t.open_rate).toLocaleString()}</td>
+        <td>${fmtTs(t.open_date)}</td>
         <td><span class="tag">${t.enter_tag || ''}</span></td>
       </tr>`).join('');
     }
 
+    // Today's closed
     const ct = document.getElementById('closed-tbody');
-    if (d.closed_trades_today.length === 0) {
-      ct.innerHTML = '<tr><td colspan="4" class="loading">No trades closed today</td></tr>';
+    const closed = d.closed_trades_today || [];
+    if (closed.length === 0) {
+      ct.innerHTML = '<tr><td colspan="4" class="loading">오늘 체결 없음</td></tr>';
     } else {
-      ct.innerHTML = d.closed_trades_today.map(t => `<tr>
+      ct.innerHTML = closed.map(t => `<tr>
         <td><strong>${t.pair}</strong></td>
-        <td class="${t.profit_pct >= 0 ? 'positive' : 'negative'}">${t.profit_pct >= 0 ? '+' : ''}${t.profit_pct}%</td>
-        <td>${new Date(t.close_date).toLocaleString('ko-KR')}</td>
+        <td class="num ${t.profit_pct >= 0 ? 'positive' : 'negative'}">${fmtPct(t.profit_pct, true)}</td>
+        <td>${fmtTs(t.close_date)}</td>
         <td>${t.exit_reason || ''}</td>
       </tr>`).join('');
     }
+
+    // Summary stats
+    document.getElementById('total-trades').textContent = d.total_trades || 0;
+    document.getElementById('win-rate').textContent = (d.win_rate || 0) + '%';
+    const ap = document.getElementById('avg-profit');
+    ap.textContent = fmtPct(d.total_profit_pct, true);
+    ap.className = 'value ' + ((d.total_profit_pct || 0) >= 0 ? 'positive' : 'negative');
+    const pnl = document.getElementById('total-pnl');
+    const pnlVal = d.total_profit_krw || 0;
+    pnl.textContent = (pnlVal >= 0 ? '+' : '') + Number(pnlVal).toLocaleString() + '₩';
+    pnl.className = 'value ' + (pnlVal >= 0 ? 'positive' : 'negative');
+    document.getElementById('best-trade').textContent = fmtPct(d.best_trade_pct, true);
+    document.getElementById('max-dd').textContent = '-' + Number(d.max_drawdown_krw || 0).toLocaleString() + '₩';
   } catch (e) {
-    document.getElementById('updated').textContent = 'Failed to load status';
+    document.getElementById('updated').textContent = 'Failed to load: ' + e.message;
   }
 }
 load();
-setInterval(load, 60000);
+setInterval(load, 30000);
 </script>
 </body>
 </html>
