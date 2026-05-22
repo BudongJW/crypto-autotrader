@@ -178,6 +178,9 @@ class CryptoFusionStrategy(IStrategy):
     # =========================================================================
     # __init__ — initialise caches / paths
     # =========================================================================
+    # Heartbeat throttle — emit one diagnostic line per N seconds
+    HEARTBEAT_INTERVAL_SECONDS = 60
+
     def __init__(self, config: dict) -> None:
         super().__init__(config)
         self._hmm_model = None
@@ -185,6 +188,7 @@ class CryptoFusionStrategy(IStrategy):
         self._hmm_last_train: datetime | None = None
         self._hmm_cache_df: pd.DataFrame | None = None
         self._last_fusion_learn: datetime | None = None
+        self._last_heartbeat: datetime | None = None
 
         user_data = Path(config.get("user_data_dir", "user_data"))
         self._logs_dir = user_data / "logs"
@@ -684,11 +688,22 @@ class CryptoFusionStrategy(IStrategy):
     # FIX B: HMM regime now trained on BTC/KRW once, broadcast to all pairs
     # =========================================================================
     def _train_hmm_model(self, btc_df: DataFrame) -> None:
-        if not HMM_AVAILABLE or len(btc_df) < self.HMM_LOOKBACK:
+        if not HMM_AVAILABLE:
+            logger.warning("HMM training skipped: hmmlearn not installed")
+            return
+        if len(btc_df) < self.HMM_LOOKBACK:
+            logger.info(
+                "HMM training skipped: btc_df has %d candles, need %d",
+                len(btc_df), self.HMM_LOOKBACK,
+            )
             return
         hourly_returns = btc_df["close"].pct_change(12).dropna()
         hourly_vol = hourly_returns.rolling(60).std().dropna()
         if len(hourly_vol) < 50:
+            logger.info(
+                "HMM training skipped: hourly_vol series has %d samples (<50)",
+                len(hourly_vol),
+            )
             return
 
         common_idx = hourly_returns.index.intersection(hourly_vol.index)
@@ -866,6 +881,88 @@ class CryptoFusionStrategy(IStrategy):
         path.write_text(json.dumps(weights, indent=2), encoding="utf-8")
 
     # =========================================================================
+    # Heartbeat — operational visibility (1 line/min)
+    # =========================================================================
+    def _emit_heartbeat(self) -> None:
+        """One INFO line per minute snapshotting key fusion-layer state.
+
+        Surfaces:
+          - HMM model presence + current state on BTC
+          - fusion_prob distribution across the active whitelist (min/max/mean)
+          - BTC bearish-TF count (gauge for the multi-TF entry block)
+          - orderbook reachability flag (proves dp.orderbook is wired up)
+          - whitelist size (PairList chain output)
+          - experience record count (Kelly sizing prerequisite)
+        """
+        try:
+            whitelist = self.dp.current_whitelist() \
+                if hasattr(self.dp, "current_whitelist") else []
+        except Exception:  # noqa: BLE001
+            whitelist = []
+
+        # fusion_prob distribution
+        fps: list[float] = []
+        btc_close = None
+        btc_state = "?"
+        for p in whitelist:
+            try:
+                df, _ = self.dp.get_analyzed_dataframe(p, self.timeframe)
+                if df is None or df.empty:
+                    continue
+                fp = float(df.iloc[-1].get("fusion_prob", 0.5))
+                if not np.isnan(fp):
+                    fps.append(fp)
+                if p == "BTC/KRW":
+                    btc_close = float(df.iloc[-1].get("close", 0))
+                    btc_state = str(df.iloc[-1].get("hmm_state", "?"))
+            except Exception:  # noqa: BLE001
+                continue
+
+        # BTC multi-TF bearish count (defensive — guard exists since Phase A)
+        try:
+            bearish = self._btc_bearish_tf_count()
+        except Exception:  # noqa: BLE001
+            bearish = -1
+
+        # Orderbook reachability (one cheap probe on BTC)
+        ob_status = "n/a"
+        try:
+            if hasattr(self.dp, "orderbook"):
+                book = self.dp.orderbook("BTC/KRW", maximum=1)
+                ob_status = "ok" if book and book.get("bids") else "empty"
+        except Exception as e:  # noqa: BLE001
+            ob_status = f"err:{type(e).__name__}"
+
+        # Experience count for Kelly readiness
+        exp_count = 0
+        try:
+            exp_count = len(load_experiences(
+                self._logs_dir / "experience.jsonl",
+                max_records=self.EXPERIENCE_MAX_SIZE,
+            ))
+        except Exception:  # noqa: BLE001
+            pass
+
+        if fps:
+            fp_min, fp_max = min(fps), max(fps)
+            fp_mean = sum(fps) / len(fps)
+        else:
+            fp_min = fp_max = fp_mean = float("nan")
+
+        logger.info(
+            "HEARTBEAT pairs=%d btc_close=%s hmm=%s hmm_model=%s "
+            "btc_bearish_tfs=%d/%d fusion[min/mean/max]=%.3f/%.3f/%.3f "
+            "orderbook=%s experiences=%d",
+            len(whitelist),
+            f"{btc_close:.0f}" if btc_close else "n/a",
+            btc_state,
+            "loaded" if self._hmm_model is not None else "none",
+            bearish, len(self.BTC_MULTI_TFS),
+            fp_min, fp_mean, fp_max,
+            ob_status, exp_count,
+        )
+
+    # =========================================================================
     # Bot loop + experience
     # =========================================================================
     def bot_loop_start(self, current_time: datetime, **kwargs) -> None:
@@ -873,6 +970,15 @@ class CryptoFusionStrategy(IStrategy):
             self._last_fusion_learn = current_time
         if self._hmm_last_train is None:
             self._hmm_last_train = current_time
+
+        # Heartbeat (rate-limited): proves the loop is alive AND surfaces the
+        # current state of each fusion layer for ops monitoring.
+        if self._last_heartbeat is None or (
+            (current_time - self._last_heartbeat).total_seconds()
+            >= self.HEARTBEAT_INTERVAL_SECONDS
+        ):
+            self._emit_heartbeat()
+            self._last_heartbeat = current_time
 
         if (current_time - self._hmm_last_train).total_seconds() >= \
                 self.HMM_RETRAIN_INTERVAL_HOURS * 3600:
