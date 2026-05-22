@@ -126,18 +126,22 @@ class CryptoFusionStrategy(IStrategy):
     # ---- Phase B: Kelly position sizing ----
     KELLY_MIN_RECORDS = 30          # need this many experiences before trusting Kelly
     KELLY_SCALE = 0.25              # quarter-Kelly safety multiplier
-    KELLY_CAP = 0.20                # max 20% of bankroll on a single new entry
+    # Conservative cap: max_open_trades=5 with tradable_balance_ratio=0.95
+    # means fair share is ~19%. Capping at 15% keeps a single high-Kelly trade
+    # from crowding out other slots and limits per-trade variance.
+    KELLY_CAP = 0.15
 
     # ---- Phase B: DCA (position_adjustment) ----
     position_adjustment_enable = True
-    max_entry_position_adjustment = 3
-    # (profit_threshold, additional_stake_multiplier) per DCA step. The Nth
-    # additional fill triggers when current_profit <= the Nth threshold AND
-    # fusion_prob is still above the buy threshold.
+    max_entry_position_adjustment = 2
+    # Conservative DCA tiers: total exposure 1 + 0.3 + 0.3 = 1.6x initial.
+    # Earlier tuning at 2.5x meant a -15% drawdown lost ~38% of the per-pair
+    # allocation — with 5 concurrent pairs that becomes a system-wide tail
+    # risk. Each step still requires fusion_prob >= buy threshold AND
+    # HMM != bear (see adjust_trade_position).
     DCA_STEPS = (
-        (-0.03, 0.50),
-        (-0.06, 0.50),
-        (-0.09, 0.50),
+        (-0.025, 0.30),
+        (-0.05, 0.30),
     )
 
     # ---- Protections ----
