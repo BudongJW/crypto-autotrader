@@ -23,6 +23,9 @@ permissions:
   contents: write
   pages: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   trade:
     runs-on: ubuntu-latest
