@@ -53,7 +53,7 @@ docker compose up -d
 pip install pytest pandas numpy hmmlearn scikit-learn
 pytest tests/ -v
 ```
-100건 단위테스트 (fusion·experience·validation·config·status·HMM). freqtrade/talib 설치 불필요.
+137건 단위테스트 (fusion·experience·validation·orderbook·sizing·config·status·HMM). freqtrade/talib 설치 불필요.
 
 ## 전략 구조
 
@@ -71,6 +71,12 @@ pytest tests/ -v
 2. 동시 알트 포지션 ≤ 3
 3. ETH 1h SMA20 트렌드 (close < SMA20 × 0.98이면 알트 차단)
 4. **BTC 5m/15m/1h/4h/1d 멀티 TF 합의** — 3개 이상 TF에서 BTC가 SMA20 아래면 알트 차단 (NFI 패턴)
+5. **Orderbook 게이트** — top-5 호가 imbalance > -0.30, spread ≤ 0.5%
+
+## 진입가·사이징·DCA
+- **Microprice 진입가**: 15호가 depth-weighted mid로 limit 가격 결정 (단순 best ask 대비 슬리피지 축소)
+- **Kelly 사이징**: experience.jsonl 누적 통계로 quarter-Kelly 계산. 30건 미만이면 fallback. cap 20%/거래
+- **DCA**: -3% / -6% / -9% 손실 시 0.5x씩 추가 매수 (최대 3회). **fusion_prob ≥ buy threshold + HMM != bear일 때만** 발동 (악화된 thesis 강화 방지)
 
 ## 거래 대상
 **라이브**: VolumePairList + 6단 필터로 Upbit KRW 전체에서 동적 선정 (top 15).

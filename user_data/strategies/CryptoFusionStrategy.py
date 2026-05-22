@@ -48,8 +48,15 @@ try:
     )
     from .experience_log import (
         append_experience, load_experiences, migrate_legacy_json,
+        compute_summary_stats,
     )
     from .validation import is_recent_degraded
+    from .orderbook_lib import (
+        passes_entry_filter as orderbook_passes_entry,
+        microprice as orderbook_microprice,
+        summarize as orderbook_summarize,
+    )
+    from .sizing_lib import kelly_stake
 except ImportError:
     # Freqtrade loads strategies as top-level modules (no package)
     from fusion_lib import (  # type: ignore
@@ -59,8 +66,15 @@ except ImportError:
     )
     from experience_log import (  # type: ignore
         append_experience, load_experiences, migrate_legacy_json,
+        compute_summary_stats,
     )
     from validation import is_recent_degraded  # type: ignore
+    from orderbook_lib import (  # type: ignore
+        passes_entry_filter as orderbook_passes_entry,
+        microprice as orderbook_microprice,
+        summarize as orderbook_summarize,
+    )
+    from sizing_lib import kelly_stake  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +117,28 @@ class CryptoFusionStrategy(IStrategy):
 
     EXPERIENCE_MAX_SIZE = 500
     FUSION_LEARN_INTERVAL_HOURS = 6
+
+    # ---- Phase B: orderbook microstructure gate ----
+    ORDERBOOK_LEVELS = 5
+    ORDERBOOK_MIN_CUM_IMB = -0.30   # block alt entry if top-5 imbalance < this
+    ORDERBOOK_MAX_SPREAD = 0.005    # 0.5% of mid
+
+    # ---- Phase B: Kelly position sizing ----
+    KELLY_MIN_RECORDS = 30          # need this many experiences before trusting Kelly
+    KELLY_SCALE = 0.25              # quarter-Kelly safety multiplier
+    KELLY_CAP = 0.20                # max 20% of bankroll on a single new entry
+
+    # ---- Phase B: DCA (position_adjustment) ----
+    position_adjustment_enable = True
+    max_entry_position_adjustment = 3
+    # (profit_threshold, additional_stake_multiplier) per DCA step. The Nth
+    # additional fill triggers when current_profit <= the Nth threshold AND
+    # fusion_prob is still above the buy threshold.
+    DCA_STEPS = (
+        (-0.03, 0.50),
+        (-0.06, 0.50),
+        (-0.09, 0.50),
+    )
 
     # ---- Protections ----
     @property
@@ -297,7 +333,85 @@ class CryptoFusionStrategy(IStrategy):
                                       is_short=trade.is_short)
 
     # =========================================================================
-    # Confidence-based position sizing — FIX A: pair now passed directly
+    # DCA — adjust_trade_position (Phase B)
+    # =========================================================================
+    def adjust_trade_position(
+        self, trade: Trade, current_time: datetime, current_rate: float,
+        current_profit: float, min_stake: float | None, max_stake: float,
+        current_entry_rate: float, current_exit_rate: float,
+        current_entry_profit: float, current_exit_profit: float, **kwargs,
+    ) -> float | None:
+        """
+        Step into losing-but-still-bullish trades to improve average entry.
+
+        Gates: (1) fusion_prob still ≥ buy threshold, (2) HMM not bear,
+        (3) drawdown threshold for the next DCA step has been crossed.
+        """
+        df, _ = self.dp.get_analyzed_dataframe(trade.pair, self.timeframe)
+        if df is None or df.empty:
+            return None
+        last = df.iloc[-1]
+
+        # Signal must still be bullish — never DCA into a deteriorating thesis.
+        fusion_prob = float(last.get("fusion_prob", 0.5))
+        if fusion_prob < float(self.buy_fusion_threshold.value):
+            return None
+        if str(last.get("hmm_state", "sideways")) == "bear":
+            return None
+
+        try:
+            filled = trade.select_filled_orders(trade.entry_side)
+        except Exception:  # noqa: BLE001
+            filled = []
+        n_entries = len(filled)
+        # n_entries includes the initial entry; DCA_STEPS indexes 0=first add.
+        step = n_entries - 1
+        if step < 0 or step >= len(self.DCA_STEPS):
+            return None
+
+        profit_threshold, mult = self.DCA_STEPS[step]
+        if current_profit > profit_threshold:
+            return None
+
+        try:
+            initial_cost = float(filled[0].cost) if filled else float(trade.stake_amount)
+        except Exception:  # noqa: BLE001
+            initial_cost = float(trade.stake_amount)
+        add_stake = initial_cost * mult
+
+        if min_stake is not None:
+            add_stake = max(add_stake, float(min_stake))
+        add_stake = min(add_stake, float(max_stake))
+
+        logger.info(
+            "DCA step %d on %s: profit=%.2f%% threshold=%.2f%% adding %.0f KRW "
+            "(fusion=%.2f)",
+            step + 1, trade.pair, current_profit * 100, profit_threshold * 100,
+            add_stake, fusion_prob,
+        )
+        return add_stake
+
+    # =========================================================================
+    # Microprice-aware entry price (Phase B)
+    # =========================================================================
+    def custom_entry_price(self, pair, current_time, proposed_rate, entry_tag,
+                           side, **kwargs):
+        """Override Freqtrade's order_book_top=1 pricing with depth-weighted
+        microprice when the L2 book is available. Falls back to proposed_rate
+        on any error or thin book."""
+        try:
+            book = self.dp.orderbook(pair, maximum=self.ORDERBOOK_LEVELS) \
+                if hasattr(self.dp, "orderbook") else None
+        except Exception:  # noqa: BLE001
+            return proposed_rate
+        mp = orderbook_microprice(book) if book else None
+        if mp is None or mp <= 0:
+            return proposed_rate
+        # For longs, microprice biased toward ask is conservative on entry.
+        return float(mp)
+
+    # =========================================================================
+    # Kelly-based position sizing (Phase B; replaces heuristic 0.6–1.2× scale)
     # =========================================================================
     def custom_stake_amount(
         self,
@@ -322,19 +436,43 @@ class CryptoFusionStrategy(IStrategy):
         last = dataframe.iloc[-1]
         fusion_prob = float(last.get("fusion_prob", 0.5))
 
-        if fusion_prob >= 0.80:
-            scale = 1.2
-        elif fusion_prob >= 0.70:
-            scale = 1.0
-        elif fusion_prob >= 0.60:
-            scale = 0.8
-        else:
-            scale = 0.6
+        # Pull experience stats for Kelly. Falls back gracefully when too few
+        # records exist (cold start → behave like the old heuristic).
+        try:
+            recs = load_experiences(
+                self._logs_dir / "experience.jsonl",
+                max_records=self.EXPERIENCE_MAX_SIZE,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to load experiences for Kelly sizing: %s", e)
+            recs = []
+        stats = compute_summary_stats(recs)
+        record_count = stats.get("count", 0)
 
+        # Optional bankroll input for absolute Kelly sizing.
+        bankroll = None
+        try:
+            bankroll = float(self.wallets.get_total_stake_amount())
+        except Exception:  # noqa: BLE001
+            bankroll = None
+
+        stake = kelly_stake(
+            proposed_stake=float(proposed_stake),
+            win_rate=stats.get("win_rate"),
+            avg_win=stats.get("avg_win_pnl"),
+            avg_loss=stats.get("avg_loss_pnl"),
+            fusion_prob=fusion_prob,
+            total_bankroll=bankroll,
+            min_records_for_kelly=self.KELLY_MIN_RECORDS,
+            record_count=record_count,
+            kelly_scale=self.KELLY_SCALE,
+            kelly_cap=self.KELLY_CAP,
+        )
+
+        # Bear regime: half the Kelly recommendation (defensive).
         if last.get("hmm_state", "sideways") == "bear":
-            scale *= 0.7
+            stake *= 0.7
 
-        stake = proposed_stake * scale
         stake = min(stake, max_stake)
         if min_stake is not None:
             stake = max(stake, min_stake)
@@ -381,6 +519,30 @@ class CryptoFusionStrategy(IStrategy):
                 logger.info(
                     "BTC bearish on %d/%d TFs, blocking alt entry %s",
                     bearish, len(self.BTC_MULTI_TFS), pair,
+                )
+                return False
+
+        # Orderbook microstructure gate (Upbit 15-level L2): reject entries
+        # into thin / ask-heavy books to cut slippage and adverse selection.
+        # Fetch is best-effort — on backtest dp.orderbook may return None.
+        try:
+            book = self.dp.orderbook(pair, maximum=self.ORDERBOOK_LEVELS) \
+                if hasattr(self.dp, "orderbook") else None
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Orderbook fetch failed for %s: %s", pair, e)
+            book = None
+        if book:
+            ok, metrics = orderbook_passes_entry(
+                book,
+                min_cum_imbalance=self.ORDERBOOK_MIN_CUM_IMB,
+                max_spread=self.ORDERBOOK_MAX_SPREAD,
+                levels=self.ORDERBOOK_LEVELS,
+            )
+            if not ok:
+                logger.info(
+                    "Orderbook gate blocked %s (imb=%.2f spread=%s)",
+                    pair, metrics.get("cum_imb", 0.0),
+                    f"{metrics['spread']:.4f}" if metrics.get("spread") else "n/a",
                 )
                 return False
         return True
