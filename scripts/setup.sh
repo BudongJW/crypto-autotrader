@@ -3,19 +3,16 @@ set -e
 
 echo "=== crypto-autotrader setup ==="
 
-# Create directory structure
-mkdir -p user_data/{strategies,freqaimodels,data,logs}
+mkdir -p user_data/{strategies,freqaimodels,data,logs,backtest_results}
 
-# Copy strategy
-cp -n user_data/strategies/CryptoFusionStrategy.py user_data/strategies/ 2>/dev/null || true
-
-# Create .env from example if not exists
 if [ ! -f .env ]; then
     cp .env.example .env
-    echo "Created .env from .env.example — edit with your Upbit API keys"
+    echo "Created .env from .env.example — edit with your Upbit API keys."
 fi
 
+echo
 echo "Setup complete. Next steps:"
 echo "  1. Edit .env with your Upbit API credentials"
-echo "  2. Run: bash scripts/download_data.sh"
-echo "  3. Run: freqtrade backtesting --config configs/config-backtest.json --strategy CryptoFusionStrategy"
+echo "  2. Download data:    bash scripts/download_data.sh"
+echo "  3. Run backtest:     freqtrade backtesting --config configs/config-backtest.json --strategy CryptoFusionStrategy --freqaimodel LightGBMRegressor"
+echo "  4. Dry-run trade:    freqtrade trade --config configs/config.json --strategy CryptoFusionStrategy --freqaimodel LightGBMRegressor"

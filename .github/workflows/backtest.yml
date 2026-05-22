@@ -35,11 +35,12 @@ jobs:
             --timeframes 5m 15m 1h \
             --days 90
 
-      - name: Run backtest
+      - name: Run backtest (with FreqAI)
         run: |
           freqtrade backtesting \
             --config configs/config-backtest.json \
             --strategy CryptoFusionStrategy \
+            --freqaimodel LightGBMRegressor \
             --timerange "$(date -d '3 months ago' +%Y%m%d)-" \
             --export trades \
             || true

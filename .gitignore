@@ -10,6 +10,9 @@ dist/
 build/
 .venv/
 venv/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Freqtrade data
 user_data/data/

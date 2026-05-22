@@ -3,17 +3,30 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 
-def extract_status() -> dict:
-    db_path = Path("user_data/tradesv3.sqlite")
+def detect_mode(config_path: Path) -> str:
+    """Read configs/config.json to determine live vs dry_run; fallback to dry_run."""
+    if not config_path.exists():
+        return "dry_run"
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return "dry_run"
+    return "dry_run" if cfg.get("dry_run", True) else "live"
+
+
+def extract_status(
+    db_path: Path = Path("user_data/tradesv3.sqlite"),
+    config_path: Path = Path("configs/config.json"),
+) -> dict:
     status: dict = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "mode": "dry_run",
+        "mode": detect_mode(config_path),
         "open_trades": [],
         "closed_trades_today": [],
         "total_profit_pct": 0.0,
@@ -27,7 +40,6 @@ def extract_status() -> dict:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
 
-    # Open trades
     rows = conn.execute(
         "SELECT pair, stake_amount, open_rate, open_date, "
         "close_profit_abs, enter_tag FROM trades WHERE is_open = 1"
@@ -41,7 +53,6 @@ def extract_status() -> dict:
             "enter_tag": r["enter_tag"],
         })
 
-    # Today's closed trades
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     rows = conn.execute(
         "SELECT pair, open_rate, close_rate, close_profit, close_date, "
@@ -57,7 +68,6 @@ def extract_status() -> dict:
             "exit_reason": r["exit_reason"],
         })
 
-    # Summary stats
     row = conn.execute(
         "SELECT COUNT(*) as cnt, "
         "COALESCE(AVG(close_profit), 0) as avg_profit, "
@@ -75,7 +85,6 @@ def extract_status() -> dict:
         status["best_trade_pct"] = round(row["best_trade"] * 100, 2)
         status["worst_trade_pct"] = round(row["worst_trade"] * 100, 2)
 
-    # Max drawdown (sequential cumulative profit)
     dd_rows = conn.execute(
         "SELECT close_profit_abs FROM trades WHERE is_open = 0 ORDER BY close_date"
     ).fetchall()
@@ -86,8 +95,7 @@ def extract_status() -> dict:
         for r in dd_rows:
             cum += r["close_profit_abs"]
             peak = max(peak, cum)
-            dd = peak - cum
-            max_dd = max(max_dd, dd)
+            max_dd = max(max_dd, peak - cum)
         status["max_drawdown_krw"] = round(max_dd, 0)
 
     conn.close()
@@ -98,28 +106,22 @@ def main():
     status = extract_status()
     docs = Path("docs")
     docs.mkdir(parents=True, exist_ok=True)
-
     (docs / "status.json").write_text(
         json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    # Copy index.html to docs/ if not present (for GitHub Pages)
-    src_html = Path("docs/index.html")
-    if not src_html.exists():
-        repo_html = Path("docs/index.html")
-        # Fallback: check repo root
-        for candidate in [Path("docs/index.html"), Path("index.html")]:
-            if candidate.exists():
-                break
-        else:
-            # Generate minimal redirect
-            src_html.write_text(
-                '<meta http-equiv="refresh" content="0;url=status.json">',
-                encoding="utf-8",
-            )
+    # Ensure dashboard exists (committed at docs/index.html)
+    if not (docs / "index.html").exists():
+        (docs / "index.html").write_text(
+            '<meta http-equiv="refresh" content="0;url=status.json">',
+            encoding="utf-8",
+        )
 
-    print(f"Status written: {len(status['open_trades'])} open, "
-          f"{len(status['closed_trades_today'])} closed today")
+    print(
+        f"Status written ({status['mode']}): "
+        f"{len(status['open_trades'])} open, "
+        f"{len(status['closed_trades_today'])} closed today"
+    )
 
 
 if __name__ == "__main__":

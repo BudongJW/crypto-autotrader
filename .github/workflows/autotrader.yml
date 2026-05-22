@@ -9,6 +9,11 @@ on:
     - cron: "0 16 * * *"
     - cron: "0 20 * * *"
   workflow_dispatch:
+    inputs:
+      live_trading:
+        description: "Set to 'I_UNDERSTAND_THE_RISK' to enable live trading (dry_run=false)"
+        required: false
+        default: "no"
 
 concurrency:
   group: crypto-autotrader
@@ -57,18 +62,32 @@ jobs:
 
       - name: Clean stale FreqAI models
         run: |
-          # Remove old identifier models that don't match current config
-          if [ -d "user_data/models" ]; then
-            find user_data/models -maxdepth 1 -type d \( -name "crypto_fusion_lgbm" -o -name "crypto_fusion_lgbm_v2" \) -exec rm -rf {} + 2>/dev/null || true
-          fi
-          if [ -d "user_data/freqaimodels" ]; then
-            find user_data/freqaimodels -maxdepth 1 -type d \( -name "crypto_fusion_lgbm" -o -name "crypto_fusion_lgbm_v2" \) -exec rm -rf {} + 2>/dev/null || true
+          for d in user_data/models user_data/freqaimodels; do
+            [ -d "$d" ] && find "$d" -maxdepth 1 -type d \
+              \( -name "crypto_fusion_lgbm" -o -name "crypto_fusion_lgbm_v2" \) \
+              -exec rm -rf {} + 2>/dev/null || true
+          done
+
+      - name: Decide trading mode (live gate)
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+             && [ "${{ github.event.inputs.live_trading }}" = "I_UNDERSTAND_THE_RISK" ]; then
+            echo "dry_run_flag=--dry-run-wallet 1000000" >> "$GITHUB_OUTPUT"
+            echo "live=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::LIVE TRADING ENABLED for this run"
+          else
+            echo "dry_run_flag=" >> "$GITHUB_OUTPUT"
+            echo "live=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run trader (dry-run)
+      - name: Run trader
         env:
           FREQTRADE__EXCHANGE__KEY: ${{ secrets.UPBIT_API_KEY }}
           FREQTRADE__EXCHANGE__SECRET: ${{ secrets.UPBIT_API_SECRET }}
+          FREQTRADE__TELEGRAM__TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          FREQTRADE__TELEGRAM__CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FREQTRADE__DRY_RUN: ${{ steps.mode.outputs.live == 'true' && 'false' || 'true' }}
         run: |
           timeout 13200 freqtrade trade \
             --config configs/config.json \
@@ -110,3 +129,16 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
           keep_files: true
+
+      - name: Telegram failure alert
+        if: failure()
+        env:
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$BOT" ] && [ -n "$CHAT" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT}/sendMessage" \
+              -d chat_id="${CHAT}" \
+              -d text="[crypto-autotrader] workflow failed: run ${{ github.run_number }} - https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              > /dev/null || true
+          fi

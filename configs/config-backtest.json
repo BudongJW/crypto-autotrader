@@ -1,35 +1,16 @@
 {
-    "trading_mode": "spot",
-    "max_open_trades": 5,
-    "stake_currency": "KRW",
-    "stake_amount": "unlimited",
-    "tradable_balance_ratio": 0.95,
+    "add_config_files": ["config.json"],
+    "bot_name": "crypto-autotrader-backtest",
     "dry_run": true,
     "dry_run_wallet": 1000000,
-
-    "timeframe": "5m",
-    "strategy": "CryptoFusionStrategy",
-
     "exchange": {
-        "name": "upbit",
-        "pair_whitelist": [
-            "BTC/KRW",
-            "ETH/KRW",
-            "XRP/KRW",
-            "SOL/KRW",
-            "DOGE/KRW",
-            "ADA/KRW",
-            "AVAX/KRW",
-            "DOT/KRW",
-            "LINK/KRW",
-            "SHIB/KRW"
-        ],
-        "pair_blacklist": []
+        "key": "",
+        "secret": ""
     },
-
-    "pairlists": [
-        {
-            "method": "StaticPairList"
-        }
-    ]
+    "telegram": {
+        "enabled": false
+    },
+    "api_server": {
+        "enabled": false
+    }
 }
