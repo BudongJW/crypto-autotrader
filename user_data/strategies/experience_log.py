@@ -40,8 +40,23 @@ def load_experiences(path: Path, max_records: int | None = None) -> list[dict]:
                 # Skip corrupt lines rather than losing the whole log
                 continue
     if max_records is not None and len(records) > max_records:
+        raw_count = len(records)
         records = records[-max_records:]
+        if raw_count > max_records * 2:
+            try:
+                _rotate_jsonl(path, records)
+            except Exception:
+                pass
     return records
+
+
+def _rotate_jsonl(path: Path, records: list[dict]) -> None:
+    """Rewrite JSONL file to keep only the retained records."""
+    tmp = path.with_suffix(".jsonl.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    tmp.replace(path)
 
 
 def migrate_legacy_json(legacy_path: Path, jsonl_path: Path) -> int:

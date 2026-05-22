@@ -94,7 +94,7 @@ def kelly_stake(
 
     k = kelly_fraction(win_rate, avg_win, avg_loss,
                        scale=kelly_scale, cap=kelly_cap)
-    k_scaled = k * conf
+    k_scaled = k * max(conf, 0.3)
 
     if total_bankroll is not None and total_bankroll > 0:
         return float(total_bankroll) * k_scaled
@@ -104,8 +104,6 @@ def kelly_stake(
     # implicit ~20% fair share (1/max_open_trades). Compare Kelly recommendation
     # to that baseline.
     fair_share = 0.20
-    if fair_share <= 0:
-        return float(proposed_stake) * fallback_scale * conf
     multiplier = k_scaled / fair_share
     multiplier = max(0.3, min(2.0, multiplier))   # safety bounds
     return float(proposed_stake) * multiplier
