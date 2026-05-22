@@ -741,11 +741,17 @@ class CryptoFusionStrategy(IStrategy):
             posteriors = self._hmm_model.predict_proba(X_clean)
             mapped_states = [self._hmm_state_map[int(s)] for s in states]
             mapped_conf = [float(posteriors[i, states[i]]) for i in range(len(states))]
+            # IMPORTANT: pass the Series directly (NOT .values) so the timezone
+            # is preserved. ``btc_df["date"].values`` returns a numpy datetime64
+            # array which strips the UTC tz, breaking the downstream
+            # ``pd.merge_asof`` against the tz-aware analysed_dataframe.
             cache = pd.DataFrame(
                 {"hmm_state": "sideways", "hmm_confidence": 0.5,
-                 "date": btc_df["date"].values},
+                 "date": btc_df["date"].reset_index(drop=True)},
                 index=btc_df.index,
             )
+            # Re-assert tz-aware UTC dtype regardless of input.
+            cache["date"] = pd.to_datetime(cache["date"], utc=True)
             cache.loc[clean_idx, "hmm_state"] = mapped_states
             cache.loc[clean_idx, "hmm_confidence"] = mapped_conf
             cache["hmm_state"] = cache["hmm_state"].ffill()
@@ -783,11 +789,15 @@ class CryptoFusionStrategy(IStrategy):
         if self._hmm_cache_df is None or "date" not in dataframe.columns:
             return dataframe
 
-        # Map BTC's regime series onto this pair by timestamp (forward-fill)
+        # Map BTC's regime series onto this pair by timestamp (forward-fill).
+        # Normalise both sides to tz-aware UTC so merge_asof never fails on
+        # dtype mismatch (defensive — also covers caches restored from disk).
+        left = dataframe[["date"]].copy()
+        left["date"] = pd.to_datetime(left["date"], utc=True)
+        right = self._hmm_cache_df[["date", "hmm_state", "hmm_confidence"]].copy()
+        right["date"] = pd.to_datetime(right["date"], utc=True)
         merged = pd.merge_asof(
-            dataframe[["date"]].sort_values("date"),
-            self._hmm_cache_df[["date", "hmm_state", "hmm_confidence"]]
-                .sort_values("date"),
+            left.sort_values("date"), right.sort_values("date"),
             on="date", direction="backward",
         )
         merged.index = dataframe.index
@@ -813,10 +823,17 @@ class CryptoFusionStrategy(IStrategy):
             if btc_1h is not None and len(btc_1h) > 20:
                 sma20 = btc_1h["close"].rolling(20).mean()
                 raw = ((btc_1h["close"] - sma20) / sma20 * 5).clip(-0.3, 0.3)
-                # Align 1h trend onto 5m index by date forward-fill
-                tmp = pd.DataFrame({"date": btc_1h["date"], "v": raw.values})
+                # Align 1h trend onto 5m index by date forward-fill.
+                # Normalise both sides to tz-aware UTC for merge_asof safety.
+                tmp = pd.DataFrame({
+                    "date": pd.to_datetime(btc_1h["date"], utc=True),
+                    "v": raw.values,
+                })
+                left = pd.DataFrame({
+                    "date": pd.to_datetime(btc_df["date"], utc=True),
+                })
                 merged = pd.merge_asof(
-                    pd.DataFrame({"date": btc_df["date"]}).sort_values("date"),
+                    left.sort_values("date"),
                     tmp.sort_values("date"), on="date", direction="backward",
                 )
                 trend = pd.Series(merged["v"].fillna(0.0).values, index=base.index)
