@@ -199,6 +199,7 @@ class CryptoFusionStrategy(IStrategy):
         self._last_heartbeat: datetime | None = None
         self._freqai_warn_last: dict[str, datetime] = {}
         self._recent_decisions: list[dict] = []
+        self._btc_bearish_cache: tuple[str, int] | None = None
 
         user_data = Path(config.get("user_data_dir", "user_data"))
         self._logs_dir = user_data / "logs"
@@ -234,10 +235,16 @@ class CryptoFusionStrategy(IStrategy):
     def _btc_bearish_tf_count(self) -> int:
         """Count BTC TFs where close < SMA20 (NFI-style multi-TF agreement).
 
-        Uses ``get_pair_dataframe`` (raw OHLCV) so this works even if BTC is
-        not in the trading whitelist — only its presence in
-        ``informative_pairs()`` is required.
+        Cached per 5m candle to avoid recomputing SMA20 across 5 timeframes
+        for every pair's confirm_trade_entry call.
         """
+        btc_5m = self.dp.get_pair_dataframe("BTC/KRW", "5m")
+        cache_key = ""
+        if btc_5m is not None and not btc_5m.empty:
+            cache_key = str(btc_5m["date"].iloc[-1])
+        if self._btc_bearish_cache is not None and self._btc_bearish_cache[0] == cache_key:
+            return self._btc_bearish_cache[1]
+
         bearish = 0
         for tf in self.BTC_MULTI_TFS:
             df = self.dp.get_pair_dataframe("BTC/KRW", tf)
@@ -247,6 +254,7 @@ class CryptoFusionStrategy(IStrategy):
             last_close = df["close"].iloc[-1]
             if pd.notna(sma20) and last_close < sma20:
                 bearish += 1
+        self._btc_bearish_cache = (cache_key, bearish)
         return bearish
 
     # =========================================================================
@@ -332,12 +340,22 @@ class CryptoFusionStrategy(IStrategy):
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        dataframe.loc[
-            (dataframe["fusion_prob"] < self.sell_fusion_exit.value)
-            | (dataframe["ta_score"] < -40)
-            | (dataframe["rsi_14"] > self.sell_rsi_exit.value),
-            ["exit_long", "exit_tag"],
-        ] = (1, "fusion_exit")
+        fp = dataframe["fusion_prob"]
+        ta = dataframe["ta_score"]
+        rsi = dataframe["rsi_14"]
+
+        fusion_weak = fp < self.sell_fusion_exit.value
+        ta_collapse = ta < -40
+        rsi_overbought = (rsi > self.sell_rsi_exit.value) & (fp < 0.60)
+        rsi_extreme = rsi > 92
+
+        dataframe.loc[fusion_weak, ["exit_long", "exit_tag"]] = (1, "exit_fusion_weak")
+        dataframe.loc[ta_collapse & (dataframe["exit_long"] != 1),
+                      ["exit_long", "exit_tag"]] = (1, "exit_ta_collapse")
+        dataframe.loc[rsi_overbought & (dataframe["exit_long"] != 1),
+                      ["exit_long", "exit_tag"]] = (1, "exit_rsi_overbought")
+        dataframe.loc[rsi_extreme & (dataframe["exit_long"] != 1),
+                      ["exit_long", "exit_tag"]] = (1, "exit_rsi_extreme")
         return dataframe
 
     # =========================================================================
@@ -354,9 +372,21 @@ class CryptoFusionStrategy(IStrategy):
             return self.stoploss
 
         stop_price = trade.open_rate - (atr * self.ATR_STOP_MULT)
-        if current_rate > trade.open_rate + (atr * self.ATR_TRAIL_ACTIVATE):
+
+        if current_profit > 0.04:
+            trail_price = current_rate - (atr * 0.6)
+            stop_price = max(stop_price, trail_price)
+        elif current_profit > 0.02:
+            trail_price = current_rate - (atr * 0.8)
+            stop_price = max(stop_price, trail_price)
+        elif current_rate > trade.open_rate + (atr * self.ATR_TRAIL_ACTIVATE):
             trail_price = current_rate - (atr * self.ATR_TRAIL_DISTANCE)
             stop_price = max(stop_price, trail_price)
+
+        if current_profit > 0.015:
+            breakeven = trade.open_rate * 1.002
+            stop_price = max(stop_price, breakeven)
+
         return stoploss_from_absolute(stop_price, current_rate,
                                       is_short=trade.is_short)
 
@@ -1312,6 +1342,7 @@ class CryptoFusionStrategy(IStrategy):
         avg_loss = float(np.mean([abs(e["pnl_pct"]) for e in losses]))
 
         w = self._load_fusion_weights()
+        bias_before = w["bias"]
 
         if win_rate > 0.55:
             w["bias"] = max(w["bias"] - 0.02, -0.2)
@@ -1352,7 +1383,7 @@ class CryptoFusionStrategy(IStrategy):
                 elif bull_wr < 0.4:
                     w["regime"] = max(w["regime"] - 0.02, 0.05)
             if len(bear) >= 3 and all(e["outcome"] == "loss" for e in bear[-3:]):
-                w["bias"] = min(w["bias"] + 0.05, 0.1)
+                w["bias"] = min(w["bias"] + 0.03, 0.1)
 
         short_trades = [e for e in experiences if e.get("duration_min", 999) < 30]
         if len(short_trades) >= 10:
@@ -1367,6 +1398,12 @@ class CryptoFusionStrategy(IStrategy):
                 w["bias"] = min(w["bias"] + 0.03, 0.1)
             elif rr > 1.5:
                 w["bias"] = max(w["bias"] - 0.01, -0.2)
+
+        max_bias_delta = 0.05
+        bias_delta = w["bias"] - bias_before
+        if abs(bias_delta) > max_bias_delta:
+            w["bias"] = bias_before + max_bias_delta * (1 if bias_delta > 0 else -1)
+        w["bias"] = max(-0.2, min(0.1, w["bias"]))
 
         signal_keys = ["ta_score", "lgbm_prob", "breakout", "btc_sentiment", "regime"]
         total = sum(w[k] for k in signal_keys)
