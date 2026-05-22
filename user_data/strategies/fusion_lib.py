@@ -192,9 +192,9 @@ def compute_fusion(
 
     ta_norm = (df["ta_score"] / 100.0).clip(-1, 1)
 
-    lgbm_raw = df["&-direction"].clip(0.05, 0.95)
-    lgbm_logit = np.log(lgbm_raw / (1 - lgbm_raw))
-    lgbm_norm = (lgbm_logit / 2.0).clip(-1, 1)
+    lgbm_raw = df["&-direction"].clip(0.05, 0.95).values.astype(np.float64)
+    lgbm_logit = np.log(lgbm_raw / (1.0 - lgbm_raw))
+    lgbm_norm = np.clip(lgbm_logit / 2.0, -1, 1)
 
     breakout_norm = np.where(df["breakout_signal"] == 1, 0.6, -0.3)
 
