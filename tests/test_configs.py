@@ -41,10 +41,16 @@ def test_live_pairlist_first_is_generator(live_cfg):
 
 
 def test_live_pairlist_includes_safety_filters(live_cfg):
+    # SpreadFilter is intentionally excluded on Upbit — its bulk ticker does
+    # not expose bid/ask, so SpreadFilter rejects every pair as "invalid
+    # ticker data". Spread is enforced per-trade by orderbook_lib instead.
     methods = {p["method"] for p in live_cfg["pairlists"]}
-    for required in ("AgeFilter", "SpreadFilter", "VolatilityFilter",
+    for required in ("AgeFilter", "VolatilityFilter",
                      "RangeStabilityFilter", "PrecisionFilter"):
         assert required in methods, f"missing pairlist filter: {required}"
+    assert "SpreadFilter" not in methods, (
+        "SpreadFilter must NOT be in chain on Upbit (ticker bid/ask is null)"
+    )
 
 
 def test_live_blacklist_excludes_stablecoins(live_cfg):
