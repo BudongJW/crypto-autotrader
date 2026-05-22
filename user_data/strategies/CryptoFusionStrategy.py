@@ -186,6 +186,8 @@ class CryptoFusionStrategy(IStrategy):
     HEARTBEAT_INTERVAL_SECONDS = 60
     # Suppress repeated FreqAI fallback warnings to one per pair per hour
     FREQAI_WARN_THROTTLE_SECONDS = 3600
+    # Strategy state persistence — keep last N decision events for dashboard
+    RECENT_DECISIONS_MAX = 50
 
     def __init__(self, config: dict) -> None:
         super().__init__(config)
@@ -196,6 +198,7 @@ class CryptoFusionStrategy(IStrategy):
         self._last_fusion_learn: datetime | None = None
         self._last_heartbeat: datetime | None = None
         self._freqai_warn_last: dict[str, datetime] = {}
+        self._recent_decisions: list[dict] = []
 
         user_data = Path(config.get("user_data_dir", "user_data"))
         self._logs_dir = user_data / "logs"
@@ -414,6 +417,12 @@ class CryptoFusionStrategy(IStrategy):
             step + 1, trade.pair, current_profit * 100, profit_threshold * 100,
             add_stake, fusion_prob,
         )
+        self._record_decision(
+            "dca", trade.pair, step=step + 1,
+            profit_pct=round(current_profit * 100, 2),
+            add_stake=round(add_stake, 0),
+            fusion=round(fusion_prob, 3),
+        )
         return add_stake
 
     # =========================================================================
@@ -518,8 +527,12 @@ class CryptoFusionStrategy(IStrategy):
                 recent_vol = btc_ret.tail(12).std()
                 long_vol = btc_ret.tail(288).std()
                 if long_vol > 0 and recent_vol / long_vol > self.TURBULENCE_MULT:
+                    ratio = recent_vol / long_vol
                     logger.info("BTC turbulence detected (%.2f), blocking %s",
-                                recent_vol / long_vol, pair)
+                                ratio, pair)
+                    self._record_decision("blocked", pair,
+                                          reason="btc_turbulence",
+                                          ratio=round(ratio, 2))
                     return False
 
         open_trades = Trade.get_trades_proxy(is_open=True)
@@ -527,6 +540,9 @@ class CryptoFusionStrategy(IStrategy):
         if pair != "BTC/KRW" and alt_count >= self.MAX_CORRELATED_POSITIONS:
             logger.info("Alt position limit reached (%d/%d), blocking %s",
                         alt_count, self.MAX_CORRELATED_POSITIONS, pair)
+            self._record_decision("blocked", pair, reason="alt_limit",
+                                  alt_count=alt_count,
+                                  cap=self.MAX_CORRELATED_POSITIONS)
             return False
 
         if pair not in ("BTC/KRW", "ETH/KRW"):
@@ -535,6 +551,8 @@ class CryptoFusionStrategy(IStrategy):
                 sma20 = eth_df["close"].rolling(20).mean().iloc[-1]
                 if eth_df["close"].iloc[-1] < sma20 * 0.98:
                     logger.info("ETH 1h downtrend, blocking alt entry %s", pair)
+                    self._record_decision("blocked", pair,
+                                          reason="eth_downtrend")
                     return False
 
         # BTC multi-timeframe agreement (NFI-pattern): block alt entry when BTC
@@ -547,6 +565,10 @@ class CryptoFusionStrategy(IStrategy):
                     "BTC bearish on %d/%d TFs, blocking alt entry %s",
                     bearish, len(self.BTC_MULTI_TFS), pair,
                 )
+                self._record_decision("blocked", pair,
+                                      reason="btc_multi_tf_bearish",
+                                      bearish_tfs=bearish,
+                                      total_tfs=len(self.BTC_MULTI_TFS))
                 return False
 
         # Orderbook microstructure gate (Upbit 15-level L2): reject entries
@@ -571,6 +593,12 @@ class CryptoFusionStrategy(IStrategy):
                     pair, metrics.get("cum_imb", 0.0),
                     f"{metrics['spread']:.4f}" if metrics.get("spread") else "n/a",
                 )
+                self._record_decision(
+                    "blocked", pair, reason="orderbook",
+                    cum_imb=round(float(metrics.get("cum_imb", 0.0)), 3),
+                    spread=round(float(metrics["spread"]), 5)
+                    if metrics.get("spread") else None,
+                )
                 return False
 
         # All 5 entry gates passed — log the decision context so we can later
@@ -591,6 +619,12 @@ class CryptoFusionStrategy(IStrategy):
         logger.info(
             "ENTRY PASSED %s tag=%s rate=%.0f fusion=%.3f ta=%.1f hmm=%s",
             pair, entry_tag or "-", rate, fp, ta, hmm,
+        )
+        self._record_decision(
+            "passed", pair, tag=entry_tag or "-", rate=float(rate),
+            fusion=round(fp, 3) if fp == fp else None,  # NaN check
+            ta=round(ta, 1) if ta == ta else None,
+            hmm=hmm,
         )
         return True
 
@@ -926,6 +960,31 @@ class CryptoFusionStrategy(IStrategy):
         path.write_text(json.dumps(weights, indent=2), encoding="utf-8")
 
     # =========================================================================
+    # Decision recorder — keeps last N events for the dashboard
+    # =========================================================================
+    def _record_decision(self, kind: str, pair: str, **details) -> None:
+        """Append a strategy decision event to the in-memory ring buffer.
+
+        ``kind`` ∈ {blocked, passed, dca, exit}. Details serialised verbatim
+        into ``strategy_state.json`` for the live dashboard. Failures are
+        suppressed so a decision-log issue cannot break trading.
+        """
+        try:
+            entry = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "kind": kind,
+                "pair": pair,
+                **details,
+            }
+            self._recent_decisions.append(entry)
+            if len(self._recent_decisions) > self.RECENT_DECISIONS_MAX:
+                self._recent_decisions = self._recent_decisions[
+                    -self.RECENT_DECISIONS_MAX:
+                ]
+        except Exception as e:  # noqa: BLE001
+            logger.debug("decision record failed: %s", e)
+
+    # =========================================================================
     # FreqAI fallback warning — rate-limited (1 per pair per hour)
     # =========================================================================
     def _warn_freqai_fallback(self, pair: str, exc: Exception) -> None:
@@ -961,7 +1020,8 @@ class CryptoFusionStrategy(IStrategy):
         except Exception:  # noqa: BLE001
             whitelist = []
 
-        # fusion_prob distribution
+        # Per-pair signal snapshot (also persisted to strategy_state.json)
+        per_pair: list[dict] = []
         fps: list[float] = []
         btc_close = None
         btc_state = "?"
@@ -970,12 +1030,27 @@ class CryptoFusionStrategy(IStrategy):
                 df, _ = self.dp.get_analyzed_dataframe(p, self.timeframe)
                 if df is None or df.empty:
                     continue
-                fp = float(df.iloc[-1].get("fusion_prob", 0.5))
+                last = df.iloc[-1]
+                fp = float(last.get("fusion_prob", 0.5))
                 if not np.isnan(fp):
                     fps.append(fp)
+                per_pair.append({
+                    "pair": p,
+                    "close": float(last.get("close", 0)),
+                    "fusion_prob": round(fp, 4) if not np.isnan(fp) else None,
+                    "ta_score": round(float(last.get("ta_score", 0)), 1),
+                    "lgbm_prob": round(float(last.get("&-direction", 0.5)), 4),
+                    "regime": str(last.get("hmm_state", "?")),
+                    "hmm_confidence": round(
+                        float(last.get("hmm_confidence", 0.5)), 3,
+                    ),
+                    "breakout_signal": int(last.get("breakout_signal", 0)),
+                    "rsi": round(float(last.get("rsi_14", 50)), 1),
+                    "atr_ratio": round(float(last.get("atr_ratio", 1.0)), 2),
+                })
                 if p == "BTC/KRW":
-                    btc_close = float(df.iloc[-1].get("close", 0))
-                    btc_state = str(df.iloc[-1].get("hmm_state", "?"))
+                    btc_close = float(last.get("close", 0))
+                    btc_state = str(last.get("hmm_state", "?"))
             except Exception:  # noqa: BLE001
                 continue
 
@@ -1023,6 +1098,48 @@ class CryptoFusionStrategy(IStrategy):
             ob_status, exp_count,
         )
 
+        # Persist extended state for the live dashboard (publish_state.py polls
+        # this file every 15 min via the publish_state.yml workflow).
+        try:
+            state = {
+                "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+                "btc_close": btc_close,
+                "btc_hmm_state": btc_state,
+                "btc_bearish_tfs": bearish,
+                "btc_total_tfs": len(self.BTC_MULTI_TFS),
+                "hmm_model_loaded": self._hmm_model is not None,
+                "experiences_count": exp_count,
+                "orderbook_status": ob_status,
+                "fusion_weights": self._load_fusion_weights(),
+                "thresholds": {
+                    "buy_fusion": float(self.buy_fusion_threshold.value),
+                    "buy_strong": float(self.buy_fusion_strong.value),
+                    "sell_fusion_exit": float(self.sell_fusion_exit.value),
+                    "sell_rsi_exit": int(self.sell_rsi_exit.value),
+                    "ta_fallback": int(self.buy_ta_fallback.value),
+                    "btc_bearish_block": self.BTC_BEARISH_BLOCK_THRESHOLD,
+                    "orderbook_min_imb": self.ORDERBOOK_MIN_CUM_IMB,
+                    "orderbook_max_spread": self.ORDERBOOK_MAX_SPREAD,
+                },
+                "fusion_distribution": {
+                    "min": None if not fps else round(fp_min, 4),
+                    "mean": None if not fps else round(fp_mean, 4),
+                    "max": None if not fps else round(fp_max, 4),
+                    "n": len(fps),
+                },
+                "per_pair": sorted(
+                    per_pair, key=lambda r: r.get("fusion_prob") or 0,
+                    reverse=True,
+                ),
+                "recent_decisions": list(self._recent_decisions[-30:]),
+            }
+            (self._logs_dir / "strategy_state.json").write_text(
+                json.dumps(state, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to persist strategy_state.json: %s", e)
+
     # =========================================================================
     # Bot loop + experience
     # =========================================================================
@@ -1062,6 +1179,15 @@ class CryptoFusionStrategy(IStrategy):
             self._log_experience(trade, rate, exit_reason)
         except Exception as e:  # noqa: BLE001
             logger.warning("Failed to log experience: %s", e)
+        try:
+            pnl_pct = ((float(rate) - float(trade.open_rate))
+                       / float(trade.open_rate)) * 100
+            self._record_decision(
+                "exit", pair, reason=exit_reason or "?",
+                rate=float(rate), pnl_pct=round(pnl_pct, 2),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("exit decision record failed: %s", e)
         return True
 
     def _capture_signal_context(self, pair: str, at: datetime | None) -> dict:

@@ -1,0 +1,54 @@
+name: Publish State
+
+# Polls the latest trader cache every 15 min, merges strategy_state.json +
+# SQLite trade history into docs/status.json, and deploys to GitHub Pages.
+# Provides near-realtime dashboard updates between autotrader cron cycles.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-state
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pages: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Restore trader cache (read-only)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            user_data/logs/
+            user_data/tradesv3.sqlite
+          key: trader-state-${{ github.run_id }}
+          restore-keys: |
+            trader-state-
+
+      - name: Publish state
+        run: python scripts/publish_state.py
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          keep_files: true
