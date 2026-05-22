@@ -27,30 +27,28 @@ def test_live_config_required_keys(live_cfg):
         assert key in live_cfg, f"missing key: {key}"
 
 
-def test_live_uses_dynamic_pairlist(live_cfg):
+def test_live_uses_static_pairlist(live_cfg):
+    """
+    NOTE (2026-05-22): Dynamic VolumePairList caused KeyError per-pair from
+    freqai.start because FreqAI 2026.4's historic_data cache is keyed by the
+    initial whitelist. Reverted to StaticPairList until upstream FreqAI
+    supports dynamic pair sets. SpreadFilter additionally fails on Upbit
+    because the bulk /v1/ticker endpoint omits bid/ask.
+    """
     methods = [p["method"] for p in live_cfg["pairlists"]]
-    assert "VolumePairList" in methods
-    assert "StaticPairList" not in methods   # we replaced it
-
-
-def test_live_pairlist_first_is_generator(live_cfg):
-    first = live_cfg["pairlists"][0]
-    assert first["method"] == "VolumePairList"
-    assert first.get("number_assets", 0) > 0
-    assert first.get("sort_key") == "quoteVolume"
-
-
-def test_live_pairlist_includes_safety_filters(live_cfg):
-    # SpreadFilter is intentionally excluded on Upbit — its bulk ticker does
-    # not expose bid/ask, so SpreadFilter rejects every pair as "invalid
-    # ticker data". Spread is enforced per-trade by orderbook_lib instead.
-    methods = {p["method"] for p in live_cfg["pairlists"]}
-    for required in ("AgeFilter", "VolatilityFilter",
-                     "RangeStabilityFilter", "PrecisionFilter"):
-        assert required in methods, f"missing pairlist filter: {required}"
-    assert "SpreadFilter" not in methods, (
-        "SpreadFilter must NOT be in chain on Upbit (ticker bid/ask is null)"
+    assert methods == ["StaticPairList"], (
+        "live config must use StaticPairList until FreqAI dynamic-pairlist "
+        "compat is resolved"
     )
+
+
+def test_live_pair_whitelist_includes_btc_and_eth(live_cfg):
+    """BTC + ETH must be in the trading whitelist so HMM (BTC source) and the
+    ETH 1h trend filter receive analyzed data via the standard pipeline."""
+    pairs = live_cfg["exchange"]["pair_whitelist"]
+    assert "BTC/KRW" in pairs
+    assert "ETH/KRW" in pairs
+    assert len(pairs) >= 5
 
 
 def test_live_blacklist_excludes_stablecoins(live_cfg):

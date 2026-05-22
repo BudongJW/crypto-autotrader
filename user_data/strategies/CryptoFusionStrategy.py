@@ -253,7 +253,30 @@ class CryptoFusionStrategy(IStrategy):
         dataframe["breakout_signal"] = signal
 
         if self.freqai_info.get("enabled", False):
-            dataframe = self.freqai.start(dataframe, metadata, self)
+            try:
+                dataframe = self.freqai.start(dataframe, metadata, self)
+            except KeyError as e:
+                # FreqAI raises KeyError when its historic_data cache is
+                # missing the current pair. This happens when:
+                # (a) the trading whitelist contains a pair that wasn't in
+                #     FreqAI's initial download set (e.g. dynamic pairlist),
+                # (b) the FreqAI model was loaded from a different identifier
+                #     and the cache wasn't seeded.
+                # Falling back to neutral ML signal keeps the other 5 layers
+                # (Volatility, TA, HMM, BTC sentiment, breakout) voting.
+                logger.warning(
+                    "FreqAI cache miss for %s (%s) — using neutral fallback",
+                    metadata.get("pair", "?"), e,
+                )
+                dataframe["&-direction"] = 0.5
+                dataframe["do_predict"] = 1
+            except Exception as e:  # noqa: BLE001 — never crash the loop
+                logger.warning(
+                    "FreqAI start raised %s for %s — using neutral fallback",
+                    type(e).__name__, metadata.get("pair", "?"),
+                )
+                dataframe["&-direction"] = 0.5
+                dataframe["do_predict"] = 1
         else:
             dataframe["&-direction"] = 0.5
             dataframe["do_predict"] = 1

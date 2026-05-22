@@ -79,11 +79,9 @@ pytest tests/ -v
 - **DCA**: -3% / -6% / -9% 손실 시 0.5x씩 추가 매수 (최대 3회). **fusion_prob ≥ buy threshold + HMM != bear일 때만** 발동 (악화된 thesis 강화 방지)
 
 ## 거래 대상
-**라이브**: VolumePairList + 6단 필터로 Upbit KRW 전체에서 동적 선정 (top 15).
-- 필터: AgeFilter(30일+), PriceFilter, SpreadFilter(0.5%↓), RangeStability, VolatilityFilter, PrecisionFilter
+StaticPairList 10종 (BTC, ETH, XRP, SOL, DOGE, ADA, AVAX, DOT, LINK, SHIB)
 - blacklist: 스테이블코인 (USDT/USDC/DAI/BUSD)
-
-**백테스트**: 재현성을 위해 10종 핀 (BTC, ETH, XRP, SOL, DOGE, ADA, AVAX, DOT, LINK, SHIB)
+- **알려진 한계**: VolumePairList(동적) + FreqAI 비호환으로 정적 회귀 (CLAUDE.md 참고)
 
 ## GitHub Actions
 - `autotrader.yml` — 4시간 간격 cron. 라이브 전환은 `workflow_dispatch`에서 `live_trading=I_UNDERSTAND_THE_RISK`로만 가능 (cron 트리거는 항상 dry-run).
