@@ -805,7 +805,7 @@ class CryptoFusionStrategy(IStrategy):
         # All 5 entry gates passed — log the decision context so we can later
         # attribute each accepted entry to its signal mix.
         try:
-            df = self.dp.get_pair_dataframe(pair, self.timeframe)
+            df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
             if df is not None and not df.empty:
                 last = df.iloc[-1]
                 fp = float(last.get("fusion_prob", float("nan")))
