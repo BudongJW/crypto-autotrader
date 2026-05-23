@@ -79,6 +79,27 @@
         "order_book_top": 1
     },
 
+    "protections": [
+        {
+            "method": "CooldownPeriod",
+            "stop_duration_candles": 2
+        },
+        {
+            "method": "StoplossGuard",
+            "lookback_period_candles": 12,
+            "trade_limit": 2,
+            "stop_duration_candles": 6,
+            "only_per_pair": true
+        },
+        {
+            "method": "StoplossGuard",
+            "lookback_period_candles": 24,
+            "trade_limit": 4,
+            "stop_duration_candles": 12,
+            "only_per_pair": false
+        }
+    ],
+
     "pairlists": [
         {"method": "StaticPairList"}
     ],
