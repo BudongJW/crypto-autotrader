@@ -177,11 +177,11 @@ class CryptoFusionStrategy(IStrategy):
     sell_rsi_exit = IntParameter(75, 90, default=82, space="sell", optimize=True)
 
     order_types = {
-        "entry": "limit", "exit": "limit", "emergency_exit": "limit",
+        "entry": "limit", "exit": "limit", "emergency_exit": "market",
         "force_entry": "limit", "force_exit": "limit", "stoploss": "limit",
         "stoploss_on_exchange": False,
     }
-    order_time_in_force = {"entry": "PO", "exit": "GTC"}
+    order_time_in_force = {"entry": "GTC", "exit": "GTC"}
 
     # =========================================================================
     # __init__ — initialise caches / paths

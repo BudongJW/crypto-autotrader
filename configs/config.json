@@ -30,7 +30,7 @@
     },
 
     "order_time_in_force": {
-        "entry": "PO",
+        "entry": "GTC",
         "exit": "GTC"
     },
 
