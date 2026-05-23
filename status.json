@@ -1,9 +1,12 @@
 {
-  "updated_at": "2026-05-23T06:22:21.543451+00:00",
+  "updated_at": "2026-05-23T07:44:04.379910+00:00",
   "mode": "dry_run",
   "open_trades": [],
   "closed_trades_today": [],
   "total_profit_pct": 0.0,
   "win_rate": 0.0,
-  "total_trades": 0
+  "total_trades": 0,
+  "strategy_state": {
+    "available": false
+  }
 }
