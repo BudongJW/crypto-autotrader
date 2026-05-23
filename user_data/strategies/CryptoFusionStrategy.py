@@ -12,6 +12,7 @@ can be unit-tested without freqtrade/talib installed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -175,7 +176,7 @@ class CryptoFusionStrategy(IStrategy):
         "force_entry": "limit", "force_exit": "limit", "stoploss": "limit",
         "stoploss_on_exchange": False,
     }
-    order_time_in_force = {"entry": "GTC", "exit": "GTC"}
+    order_time_in_force = {"entry": "PO", "exit": "GTC"}
 
     # =========================================================================
     # __init__ — initialise caches / paths
@@ -186,6 +187,9 @@ class CryptoFusionStrategy(IStrategy):
     FREQAI_WARN_THROTTLE_SECONDS = 3600
     # Strategy state persistence — keep last N decision events for dashboard
     RECENT_DECISIONS_MAX = 50
+
+    MAKER_FEE_DEFAULT = 0.0005   # 0.05% Upbit standard
+    TAKER_FEE_DEFAULT = 0.0005   # 0.05% Upbit standard
 
     def __init__(self, config: dict) -> None:
         super().__init__(config)
@@ -201,6 +205,10 @@ class CryptoFusionStrategy(IStrategy):
 
         self._freqai_train_count: int = 0
 
+        self._maker_fee: float = self.MAKER_FEE_DEFAULT
+        self._taker_fee: float = self.TAKER_FEE_DEFAULT
+        self._fees_queried: bool = False
+
         user_data = Path(config.get("user_data_dir", "user_data"))
         self._logs_dir = user_data / "logs"
         self._logs_dir.mkdir(parents=True, exist_ok=True)
@@ -214,6 +222,67 @@ class CryptoFusionStrategy(IStrategy):
                 logger.info("Migrated %d legacy experiences to JSONL", migrated)
         except Exception as e:  # noqa: BLE001
             logger.warning("Experience log migration skipped: %s", e)
+
+    # =========================================================================
+    # Order identifier for idempotency
+    # =========================================================================
+    def _set_order_identifier(self, pair: str, current_time: datetime,
+                              entry_tag: str | None, side: str) -> None:
+        """Set a deterministic identifier on the CCXT instance for the next order.
+
+        Upbit rejects orders with duplicate identifiers. By deriving the ID
+        from the current 5m candle + pair + tag, a GitHub Actions restart
+        within the same candle cannot submit a duplicate order.
+        """
+        try:
+            candle_ts = int(current_time.timestamp()) // 300 * 300
+            raw = f"cfa-{pair}-{candle_ts}-{entry_tag or 'x'}-{side}"
+            ident = f"cfa{hashlib.md5(raw.encode()).hexdigest()[:12]}"
+            exchange = getattr(self.dp, '_exchange', None)
+            if exchange is None:
+                return
+            api = getattr(exchange, '_api', None)
+            if api is None:
+                return
+            params = api.options.get('createOrder', {})
+            params['identifier'] = ident
+            api.options['createOrder'] = params
+            logger.debug("Order identifier set: %s for %s", ident, pair)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # =========================================================================
+    # Exchange fee query
+    # =========================================================================
+    @property
+    def _round_trip_fee(self) -> float:
+        return self._maker_fee + self._taker_fee
+
+    def _query_exchange_fees(self) -> None:
+        if self._fees_queried:
+            return
+        try:
+            exchange = getattr(self.dp, '_exchange', None)
+            if exchange is None:
+                return
+            api = getattr(exchange, '_api', None)
+            if api is None:
+                return
+            fees = api.fetch_trading_fee('BTC/KRW')
+            maker = fees.get('maker')
+            taker = fees.get('taker')
+            if maker is not None and taker is not None:
+                self._maker_fee = float(maker)
+                self._taker_fee = float(taker)
+                self._fees_queried = True
+                logger.info(
+                    "Exchange fees queried: maker=%.4f%% taker=%.4f%% "
+                    "round_trip=%.4f%%",
+                    self._maker_fee * 100, self._taker_fee * 100,
+                    self._round_trip_fee * 100,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Fee query fallback to defaults: %s", e)
 
     # =========================================================================
     # Informative pairs
@@ -723,6 +792,7 @@ class CryptoFusionStrategy(IStrategy):
             ta=round(ta, 1) if ta == ta else None,
             hmm=hmm,
         )
+        self._set_order_identifier(pair, current_time, entry_tag, side)
         return True
 
     # =========================================================================
@@ -852,7 +922,7 @@ class CryptoFusionStrategy(IStrategy):
         )
         dataframe["&-direction"] = freqai_target_continuous(
             dataframe["close"], label_period=label_period,
-            fee_round_trip=0.0015,
+            fee_round_trip=self._round_trip_fee,
         )
         return dataframe
 
@@ -1244,6 +1314,12 @@ class CryptoFusionStrategy(IStrategy):
                 "btc_total_tfs": len(self.BTC_MULTI_TFS),
                 "hmm_model_loaded": self._hmm_model is not None,
                 "experiences_count": exp_count,
+                "fees": {
+                    "maker": self._maker_fee,
+                    "taker": self._taker_fee,
+                    "round_trip": self._round_trip_fee,
+                    "queried": self._fees_queried,
+                },
                 "orderbook_status": ob_status,
                 "fusion_weights": self._load_fusion_weights(),
                 "thresholds": {
@@ -1283,6 +1359,8 @@ class CryptoFusionStrategy(IStrategy):
             self._last_fusion_learn = current_time
         if self._hmm_last_train is None:
             self._hmm_last_train = current_time
+
+        self._query_exchange_fees()
 
         # Heartbeat (rate-limited): proves the loop is alive AND surfaces the
         # current state of each fusion layer for ops monitoring.

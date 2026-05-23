@@ -22,7 +22,7 @@
     "order_types": {
         "entry": "limit",
         "exit": "limit",
-        "emergency_exit": "limit",
+        "emergency_exit": "market",
         "force_entry": "limit",
         "force_exit": "limit",
         "stoploss": "limit",
@@ -30,7 +30,7 @@
     },
 
     "order_time_in_force": {
-        "entry": "GTC",
+        "entry": "PO",
         "exit": "GTC"
     },
 
