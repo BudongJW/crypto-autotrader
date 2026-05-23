@@ -1,50 +1,12 @@
 {
-  "updated_at": "2026-05-23T13:51:57.037948+00:00",
+  "updated_at": "2026-05-23T14:03:18.102112+00:00",
   "mode": "dry_run",
   "open_trades": [],
-  "closed_trades_today": [
-    {
-      "pair": "LINK/KRW",
-      "profit_pct": -0.32,
-      "close_date": "2026-05-23 07:31:37.103000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "DOT/KRW",
-      "profit_pct": -0.31,
-      "close_date": "2026-05-23 07:31:32.424000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "SOL/KRW",
-      "profit_pct": -0.55,
-      "close_date": "2026-05-23 07:51:18.100000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.6,
-      "close_date": "2026-05-23 07:57:44.651000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.83,
-      "close_date": "2026-05-23 07:55:20.078000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "BTC/KRW",
-      "profit_pct": 0.02,
-      "close_date": "2026-05-23 13:03:11.740000",
-      "exit_reason": "trailing_stop_loss"
-    }
-  ],
-  "total_profit_pct": -0.43,
-  "win_rate": 16.7,
-  "total_trades": 6,
-  "total_profit_krw": -1035.0,
-  "best_trade_pct": 0.02,
-  "worst_trade_pct": -0.83,
-  "max_drawdown_krw": 1044.0
+  "closed_trades_today": [],
+  "total_profit_pct": 0.0,
+  "win_rate": 0.0,
+  "total_trades": 0,
+  "strategy_state": {
+    "available": false
+  }
 }
