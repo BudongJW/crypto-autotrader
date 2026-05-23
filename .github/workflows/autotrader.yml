@@ -67,7 +67,7 @@ jobs:
         run: |
           for d in user_data/models user_data/freqaimodels; do
             [ -d "$d" ] && find "$d" -maxdepth 1 -type d \
-              \( -name "crypto_fusion_lgbm" -o -name "crypto_fusion_lgbm_v2" \) \
+              \( -name "crypto_fusion_lgbm" -o -name "crypto_fusion_lgbm_v2" -o -name "crypto_fusion_lgbm_v3" \) \
               -exec rm -rf {} + 2>/dev/null || true
           done
 

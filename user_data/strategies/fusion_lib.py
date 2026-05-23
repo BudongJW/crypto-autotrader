@@ -31,7 +31,7 @@ SCORE_MAX = {
 
 DEFAULT_FUSION_WEIGHTS = {
     "ta_score": 0.25, "lgbm_prob": 0.30, "breakout": 0.20,
-    "btc_sentiment": 0.10, "regime": 0.15, "bias": -0.1,
+    "btc_sentiment": 0.10, "regime": 0.15, "bias": -0.02,
 }
 
 

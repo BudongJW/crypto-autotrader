@@ -107,8 +107,8 @@ class CryptoFusionStrategy(IStrategy):
     ATR_STOP_MULT = 1.5
     ATR_TRAIL_ACTIVATE = 2.0
     ATR_TRAIL_DISTANCE = 1.0
-    TURBULENCE_MULT = 1.5
-    MAX_CORRELATED_POSITIONS = 3
+    TURBULENCE_MULT = 2.0
+    MAX_CORRELATED_POSITIONS = 4
 
     HMM_N_STATES = 3
     HMM_LOOKBACK = 200
@@ -116,7 +116,7 @@ class CryptoFusionStrategy(IStrategy):
     HMM_SOURCE_PAIR = "BTC/KRW"
 
     EXPERIENCE_MAX_SIZE = 500
-    FUSION_LEARN_INTERVAL_HOURS = 6
+    FUSION_LEARN_INTERVAL_HOURS = 4
 
     # ---- Phase B: orderbook microstructure gate ----
     ORDERBOOK_LEVELS = 5
@@ -157,20 +157,20 @@ class CryptoFusionStrategy(IStrategy):
             {"method": "CooldownPeriod", "stop_duration_candles": 5},
         ]
 
-    minimal_roi = {"0": 0.05, "60": 0.03, "240": 0.015, "720": 0.005}
-    stoploss = -0.03
+    minimal_roi = {"0": 0.03, "30": 0.02, "60": 0.012, "120": 0.008, "360": 0.004}
+    stoploss = -0.025
     use_custom_stoploss = True
     trailing_stop = False
 
     # ---- Hyperopt parameters ----
-    buy_fusion_threshold = DecimalParameter(0.50, 0.65, default=0.55,
+    buy_fusion_threshold = DecimalParameter(0.45, 0.60, default=0.50,
                                             space="buy", optimize=True)
-    buy_fusion_strong = DecimalParameter(0.65, 0.80, default=0.70,
+    buy_fusion_strong = DecimalParameter(0.58, 0.75, default=0.62,
                                          space="buy", optimize=True)
-    buy_ta_fallback = IntParameter(35, 65, default=50, space="buy", optimize=True)
-    sell_fusion_exit = DecimalParameter(0.30, 0.50, default=0.40,
+    buy_ta_fallback = IntParameter(30, 60, default=40, space="buy", optimize=True)
+    sell_fusion_exit = DecimalParameter(0.30, 0.50, default=0.38,
                                         space="sell", optimize=True)
-    sell_rsi_exit = IntParameter(75, 90, default=85, space="sell", optimize=True)
+    sell_rsi_exit = IntParameter(75, 90, default=82, space="sell", optimize=True)
 
     order_types = {
         "entry": "limit", "exit": "limit", "emergency_exit": "limit",
@@ -220,7 +220,7 @@ class CryptoFusionStrategy(IStrategy):
     # =========================================================================
     BTC_MULTI_TFS = ("5m", "15m", "1h", "4h", "1d")
     # Block alt entry when BTC is bearish on at least this many of the TFs above
-    BTC_BEARISH_BLOCK_THRESHOLD = 3
+    BTC_BEARISH_BLOCK_THRESHOLD = 4
 
     def informative_pairs(self):
         return [
