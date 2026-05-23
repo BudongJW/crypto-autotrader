@@ -36,6 +36,19 @@ jobs:
       - name: Generate status report
         run: python scripts/generate_status.py
 
+      - name: Generate daily journal
+        run: python scripts/generate_journal.py
+
+      - name: Commit journal to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -d user_data/logs/journal ] && [ -n "$(ls user_data/logs/journal/*.md 2>/dev/null)" ]; then
+            git add user_data/logs/journal/
+            git diff --cached --quiet || git commit -m "journal: $(date -u +%Y-%m-%d) 일일 투자 일기"
+            git push || echo "Push skipped (conflict or no changes)"
+          fi
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:

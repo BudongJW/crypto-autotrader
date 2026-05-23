@@ -104,6 +104,10 @@ jobs:
         if: always()
         run: python scripts/generate_status.py || echo "Status generation skipped"
 
+      - name: Generate trading journal
+        if: always()
+        run: python scripts/generate_journal.py || echo "Journal generation skipped"
+
       - name: Save state cache
         if: always()
         uses: actions/cache/save@v4
@@ -122,6 +126,7 @@ jobs:
           name: trade-logs-${{ github.run_number }}
           path: |
             user_data/logs/
+            user_data/logs/journal/
             docs/status.json
           retention-days: 30
 
