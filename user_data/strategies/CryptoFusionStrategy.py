@@ -201,6 +201,8 @@ class CryptoFusionStrategy(IStrategy):
         self._recent_decisions: list[dict] = []
         self._btc_bearish_cache: tuple[str, int] | None = None
 
+        self._freqai_train_count: int = 0
+
         user_data = Path(config.get("user_data_dir", "user_data"))
         self._logs_dir = user_data / "logs"
         self._logs_dir.mkdir(parents=True, exist_ok=True)
@@ -282,6 +284,24 @@ class CryptoFusionStrategy(IStrategy):
         if self.freqai_info.get("enabled", False):
             try:
                 dataframe = self.freqai.start(dataframe, metadata, self)
+                pair = metadata.get("pair", "?")
+                direction = dataframe["&-direction"]
+                do_pred = dataframe["do_predict"]
+                pred_count = int((do_pred == 1).sum())
+                self._freqai_train_count += 1
+                if self._freqai_train_count <= len(
+                    self.dp.current_whitelist()
+                    if hasattr(self.dp, "current_whitelist") else []
+                ):
+                    self._log_learning_event(
+                        "freqai_predict",
+                        pair=pair,
+                        predictions_count=pred_count,
+                        direction_min=round(float(direction.min()), 4),
+                        direction_max=round(float(direction.max()), 4),
+                        direction_mean=round(float(direction.mean()), 4),
+                        direction_std=round(float(direction.std()), 4),
+                    )
             except (KeyError, Exception) as e:  # noqa: BLE001
                 # FreqAI raises KeyError on historic_data cache misses
                 # (dynamic pairlist or stale identifier) and various other
@@ -869,6 +889,21 @@ class CryptoFusionStrategy(IStrategy):
                 int(order[0]): "bear", int(order[1]): "sideways", int(order[2]): "bull",
             }
             logger.info("HMM (BTC) retrained on %d samples", len(X_clean))
+
+            state_dist = {
+                label: int((states == idx).sum())
+                for idx, label in self._hmm_state_map.items()
+            }
+            current_state = self._hmm_state_map.get(int(states[-1]), "?")
+            self._log_learning_event(
+                "hmm_retrain",
+                samples=len(X_clean),
+                n_states=self.HMM_N_STATES,
+                state_distribution=state_dist,
+                current_state=current_state,
+                state_means={self._hmm_state_map[int(order[i])]: round(means[order[i]], 6)
+                             for i in range(len(order))},
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning("HMM training failed: %s", e)
 
@@ -1045,6 +1080,22 @@ class CryptoFusionStrategy(IStrategy):
                 ]
         except Exception as e:  # noqa: BLE001
             logger.debug("decision record failed: %s", e)
+
+    # =========================================================================
+    # Learning event logger — JSONL append for AI training diary
+    # =========================================================================
+    def _log_learning_event(self, event_type: str, **details) -> None:
+        try:
+            path = self._logs_dir / "learning_log.jsonl"
+            entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "event": event_type,
+                **details,
+            }
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception as e:  # noqa: BLE001
+            logger.debug("learning log write failed: %s", e)
 
     # =========================================================================
     # FreqAI fallback warning — rate-limited (1 per pair per hour)
@@ -1365,11 +1416,25 @@ class CryptoFusionStrategy(IStrategy):
                 diag.get("std_prior", 0.0),
                 diag.get("n_records", 0),
             )
+            self._log_learning_event(
+                "validation_gate_blocked",
+                reason="oos_sharpe_degradation",
+                recent_sharpe=diag.get("recent_sharpe", 0.0),
+                threshold=diag.get("threshold", 0.0),
+                median_prior=diag.get("median_prior", 0.0),
+                std_prior=diag.get("std_prior", 0.0),
+                n_records=diag.get("n_records", 0),
+            )
             return
         if diag.get("checked"):
             logger.info(
                 "Validation OK — recent fold Sharpe %.2f >= threshold %.2f",
                 diag.get("recent_sharpe", 0.0), diag.get("threshold", 0.0),
+            )
+            self._log_learning_event(
+                "validation_gate_passed",
+                recent_sharpe=diag.get("recent_sharpe", 0.0),
+                threshold=diag.get("threshold", 0.0),
             )
 
         wins = [e for e in experiences if e.get("outcome") == "win"]
@@ -1451,8 +1516,20 @@ class CryptoFusionStrategy(IStrategy):
             for k in signal_keys:
                 w[k] = w[k] / total
 
+        weights_before = self._load_fusion_weights()
         self._save_fusion_weights(w)
         logger.info(
             "Fusion weights updated: wr=%.1f%%, rr=%.2f, avg_win=%.2f%%, bias=%.3f",
             win_rate * 100, avg_win / max(avg_loss, 0.01), avg_win, w["bias"],
+        )
+        self._log_learning_event(
+            "fusion_weight_update",
+            experience_count=len(experiences),
+            win_rate=round(win_rate, 3),
+            avg_win_pct=round(avg_win, 3),
+            avg_loss_pct=round(avg_loss, 3),
+            risk_reward=round(avg_win / max(avg_loss, 0.01), 3),
+            weights_before={k: round(v, 4) for k, v in weights_before.items()},
+            weights_after={k: round(v, 4) for k, v in w.items()},
+            tag_stats=tag_stats,
         )

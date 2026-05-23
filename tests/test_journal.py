@@ -9,7 +9,7 @@ import pytest
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-from generate_journal import generate_journal, _load_experiences, _query_trades
+from generate_journal import generate_journal, _load_experiences, _query_trades, _load_jsonl_by_date
 
 
 @pytest.fixture
@@ -209,3 +209,85 @@ def test_journal_blocked_decisions(tmp_env):
     assert "2건" in content
     assert "승인된 진입" in content
     assert "BTC/KRW" in content
+
+
+def test_journal_with_learning_events(tmp_env):
+    db_path, state_path, exp_path, journal_dir = tmp_env
+    learn_path = journal_dir.parent / "learning_log.jsonl"
+    events = [
+        {
+            "timestamp": "2026-05-23T06:00:00+00:00",
+            "event": "hmm_retrain",
+            "samples": 150,
+            "n_states": 3,
+            "state_distribution": {"bull": 50, "sideways": 60, "bear": 40},
+            "current_state": "sideways",
+            "state_means": {"bull": 0.002, "sideways": 0.0001, "bear": -0.003},
+        },
+        {
+            "timestamp": "2026-05-23T10:00:00+00:00",
+            "event": "freqai_predict",
+            "pair": "BTC/KRW",
+            "predictions_count": 300,
+            "direction_min": 0.32,
+            "direction_max": 0.68,
+            "direction_mean": 0.48,
+            "direction_std": 0.08,
+        },
+        {
+            "timestamp": "2026-05-23T14:00:00+00:00",
+            "event": "fusion_weight_update",
+            "experience_count": 50,
+            "win_rate": 0.55,
+            "avg_win_pct": 1.2,
+            "avg_loss_pct": 0.8,
+            "risk_reward": 1.5,
+            "weights_before": {"ta_score": 0.25, "lgbm_prob": 0.30, "bias": -0.02},
+            "weights_after": {"ta_score": 0.26, "lgbm_prob": 0.32, "bias": -0.04},
+            "tag_stats": {
+                "fusion_strong": {"wr": 0.65, "avg_pnl": 1.5},
+            },
+        },
+        {
+            "timestamp": "2026-05-23T14:00:01+00:00",
+            "event": "validation_gate_passed",
+            "recent_sharpe": 1.2,
+            "threshold": 0.8,
+        },
+    ]
+    learn_path.write_text(
+        "\n".join(json.dumps(e) for e in events), encoding="utf-8"
+    )
+
+    path = generate_journal(
+        date_str="2026-05-23",
+        db_path=db_path, state_path=state_path,
+        exp_path=exp_path, learn_path=learn_path,
+        journal_dir=journal_dir,
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "AI 학습 기록" in content
+    assert "HMM 레짐 모델 재훈련" in content
+    assert "150샘플" in content
+    assert "sideways" in content
+    assert "FreqAI" in content
+    assert "BTC/KRW" in content
+    assert "0.32" in content
+    assert "Fusion Weight 재학습" in content
+    assert "ta_score" in content
+    assert "Validation Gate" in content
+    assert "1통과" in content
+
+
+def test_journal_no_learning_events(tmp_env):
+    db_path, state_path, exp_path, journal_dir = tmp_env
+    learn_path = journal_dir.parent / "learning_log.jsonl"
+    path = generate_journal(
+        date_str="2026-05-23",
+        db_path=db_path, state_path=state_path,
+        exp_path=exp_path, learn_path=learn_path,
+        journal_dir=journal_dir,
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "AI 학습 기록" in content
+    assert "당일 학습 이벤트 없음" in content

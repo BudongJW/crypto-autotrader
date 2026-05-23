@@ -26,7 +26,7 @@ def _load_json(path: Path) -> dict | None:
         return None
 
 
-def _load_experiences(path: Path, date_str: str) -> list[dict]:
+def _load_jsonl_by_date(path: Path, date_str: str) -> list[dict]:
     if not path.exists():
         return []
     records = []
@@ -42,6 +42,10 @@ def _load_experiences(path: Path, date_str: str) -> list[dict]:
     except (json.JSONDecodeError, OSError):
         pass
     return records
+
+
+def _load_experiences(path: Path, date_str: str) -> list[dict]:
+    return _load_jsonl_by_date(path, date_str)
 
 
 def _query_trades(db_path: Path, date_str: str) -> dict:
@@ -132,6 +136,7 @@ def generate_journal(
     db_path: Path | None = None,
     state_path: Path | None = None,
     exp_path: Path | None = None,
+    learn_path: Path | None = None,
     journal_dir: Path | None = None,
 ) -> Path:
     if date_str is None:
@@ -140,12 +145,14 @@ def generate_journal(
     db_path = db_path or ROOT / "user_data" / "tradesv3.sqlite"
     state_path = state_path or ROOT / "user_data" / "logs" / "strategy_state.json"
     exp_path = exp_path or ROOT / "user_data" / "logs" / "experience.jsonl"
+    learn_path = learn_path or ROOT / "user_data" / "logs" / "learning_log.jsonl"
     journal_dir = journal_dir or ROOT / "user_data" / "logs" / "journal"
     journal_dir.mkdir(parents=True, exist_ok=True)
 
     state = _load_json(state_path) or {}
     trades = _query_trades(db_path, date_str)
     experiences = _load_experiences(exp_path, date_str)
+    learning_events = _load_jsonl_by_date(learn_path, date_str)
 
     lines: list[str] = []
     lines.append(f"# 투자 일기 — {date_str}")
@@ -340,10 +347,114 @@ def generate_journal(
                 )
             lines.append("")
 
-    # --- 7. 전략 파라미터 스냅샷 ---
+    # --- 7. AI 학습 기록 ---
+    if learning_events:
+        lines.append("## 7. AI 학습 기록")
+        lines.append("")
+
+        hmm_events = [e for e in learning_events if e["event"] == "hmm_retrain"]
+        fusion_events = [e for e in learning_events if e["event"] == "fusion_weight_update"]
+        freqai_events = [e for e in learning_events if e["event"] == "freqai_predict"]
+        val_blocked = [e for e in learning_events if e["event"] == "validation_gate_blocked"]
+        val_passed = [e for e in learning_events if e["event"] == "validation_gate_passed"]
+
+        if hmm_events:
+            lines.append(f"### HMM 레짐 모델 재훈련 ({len(hmm_events)}회)")
+            lines.append("")
+            for ev in hmm_events:
+                ts = ev.get("timestamp", "?")[:19]
+                samples = ev.get("samples", 0)
+                current = ev.get("current_state", "?")
+                dist = ev.get("state_distribution", {})
+                means = ev.get("state_means", {})
+                lines.append(f"- [{ts}] **{samples}샘플** → 현재: `{current}`")
+                if dist:
+                    lines.append(f"  - 분포: bull={dist.get('bull',0)}, "
+                                 f"sideways={dist.get('sideways',0)}, "
+                                 f"bear={dist.get('bear',0)}")
+                if means:
+                    lines.append(f"  - 평균 수익률: bull={means.get('bull','?')}, "
+                                 f"sideways={means.get('sideways','?')}, "
+                                 f"bear={means.get('bear','?')}")
+            lines.append("")
+
+        if freqai_events:
+            lines.append(f"### FreqAI (LightGBM) 예측 ({len(freqai_events)}페어)")
+            lines.append("")
+            lines.append("| 페어 | 예측 수 | direction [min, max] | mean | std |")
+            lines.append("|------|--------|---------------------|------|-----|")
+            for ev in freqai_events:
+                pair = ev.get("pair", "?")
+                cnt = ev.get("predictions_count", 0)
+                d_min = ev.get("direction_min", 0)
+                d_max = ev.get("direction_max", 0)
+                d_mean = ev.get("direction_mean", 0)
+                d_std = ev.get("direction_std", 0)
+                lines.append(
+                    f"| {pair} | {cnt} | [{d_min:.4f}, {d_max:.4f}] "
+                    f"| {d_mean:.4f} | {d_std:.4f} |"
+                )
+            lines.append("")
+
+        if fusion_events:
+            lines.append(f"### Fusion Weight 재학습 ({len(fusion_events)}회)")
+            lines.append("")
+            for ev in fusion_events:
+                ts = ev.get("timestamp", "?")[:19]
+                wr = ev.get("win_rate", 0)
+                rr = ev.get("risk_reward", 0)
+                n = ev.get("experience_count", 0)
+                lines.append(f"- [{ts}] {n}건 경험 기반, 승률={wr:.1%}, R:R={rr:.2f}")
+
+                wb = ev.get("weights_before", {})
+                wa = ev.get("weights_after", {})
+                if wb and wa:
+                    changed = {k: (wb.get(k, 0), wa[k])
+                               for k in wa if wb.get(k) != wa[k]}
+                    if changed:
+                        changes_str = ", ".join(
+                            f"{k}: {v[0]:.4f}→{v[1]:.4f}" for k, v in changed.items()
+                        )
+                        lines.append(f"  - 변경: {changes_str}")
+
+                tag_stats = ev.get("tag_stats", {})
+                if tag_stats:
+                    for tag, stats in tag_stats.items():
+                        lines.append(
+                            f"  - `{tag}` 성과: 승률={stats.get('wr',0):.1%}, "
+                            f"평균수익={stats.get('avg_pnl',0):+.2f}%"
+                        )
+            lines.append("")
+
+        if val_blocked or val_passed:
+            lines.append(f"### Validation Gate ({len(val_passed)}통과 / {len(val_blocked)}차단)")
+            lines.append("")
+            for ev in val_blocked:
+                ts = ev.get("timestamp", "?")[:19]
+                sharpe = ev.get("recent_sharpe", 0)
+                thresh = ev.get("threshold", 0)
+                lines.append(
+                    f"- [{ts}] **차단**: OOS Sharpe {sharpe:.2f} < "
+                    f"threshold {thresh:.2f} — weight 업데이트 건너뜀"
+                )
+            for ev in val_passed:
+                ts = ev.get("timestamp", "?")[:19]
+                sharpe = ev.get("recent_sharpe", 0)
+                thresh = ev.get("threshold", 0)
+                lines.append(
+                    f"- [{ts}] 통과: OOS Sharpe {sharpe:.2f} ≥ threshold {thresh:.2f}"
+                )
+            lines.append("")
+    else:
+        lines.append("## 7. AI 학습 기록")
+        lines.append("")
+        lines.append("당일 학습 이벤트 없음.")
+        lines.append("")
+
+    # --- 8. 전략 파라미터 스냅샷 ---
     fw = state.get("fusion_weights", {})
     if fw:
-        lines.append("## 7. 전략 파라미터 스냅샷")
+        lines.append("## 8. 전략 파라미터 스냅샷")
         lines.append("")
         lines.append("| 파라미터 | 값 |")
         lines.append("|---------|-----|")
