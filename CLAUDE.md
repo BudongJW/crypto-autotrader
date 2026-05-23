@@ -98,11 +98,14 @@ BTC/KRW, ETH/KRW, XRP/KRW, SOL/KRW, DOGE/KRW, ADA/KRW, AVAX/KRW, DOT/KRW, LINK/K
 - 커밋 메시지에 `Co-Authored-By: Claude` 라인을 포함하지 않는다.
 - 커밋 시 Claude 관련 흔적을 남기지 않는다.
 
-## FreqAI 설정
+## FreqAI 설정 (v5)
 - config.json `freqai.enabled: true` + `--freqaimodel LightGBMRegressor` (기본 워크플로우)
-- 타겟: `freqai_target_continuous` — sigmoid(net_pct × 50), 수수료 0.15% 보정
+- 타겟: `freqai_target_continuous` — sigmoid(net_pct × 150), 수수료 동적 조회 보정
 - 학습 주기: 4시간 (live_retrain_hours)
-- 학습 기간: 30일 (train_period_days)
+- 학습 기간: 45일 (train_period_days)
+- **v5 피처**: 기존 12개 base + RSI slope(방향 모멘텀), Stochastic RSI(미시 과매도), HA body ratio(캔들 반전)
+- **정규화**: L1(reg_alpha=0.1) + L2(reg_lambda=1.0) — 과적합 억제
+- **하이퍼파라미터**: n_estimators=500, lr=0.03, num_leaves=47, feature_fraction=0.7, min_child_samples=20
 
 ## 테스트
 ```bash
