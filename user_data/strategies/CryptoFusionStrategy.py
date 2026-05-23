@@ -104,9 +104,9 @@ class CryptoFusionStrategy(IStrategy):
 
     BREAKOUT_K = 0.5
     BREAKOUT_RANGE_CANDLES = 48          # 48 × 5m = 4h
-    ATR_STOP_MULT = 1.5
-    ATR_TRAIL_ACTIVATE = 2.0
-    ATR_TRAIL_DISTANCE = 1.0
+    ATR_STOP_MULT = 1.2
+    ATR_TRAIL_ACTIVATE = 1.5
+    ATR_TRAIL_DISTANCE = 0.8
     TURBULENCE_MULT = 2.0
     MAX_CORRELATED_POSITIONS = 4
 
@@ -157,8 +157,8 @@ class CryptoFusionStrategy(IStrategy):
             {"method": "CooldownPeriod", "stop_duration_candles": 5},
         ]
 
-    minimal_roi = {"0": 0.03, "20": 0.02, "45": 0.015, "90": 0.01, "180": 0.007}
-    stoploss = -0.02
+    minimal_roi = {"0": 0.015, "15": 0.01, "30": 0.007, "60": 0.005, "120": 0.003}
+    stoploss = -0.015
     use_custom_stoploss = True
     trailing_stop = False
 
@@ -219,8 +219,9 @@ class CryptoFusionStrategy(IStrategy):
     # Informative pairs
     # =========================================================================
     BTC_MULTI_TFS = ("5m", "15m", "1h", "4h", "1d")
-    # Block alt entry when BTC is bearish on at least this many of the TFs above
-    BTC_BEARISH_BLOCK_THRESHOLD = 4
+    # Block alt entry when BTC is bearish on at least this many of the TFs above.
+    # Set to 5 (full consensus) so 4/5 bearish still allows selective entries.
+    BTC_BEARISH_BLOCK_THRESHOLD = 5
 
     def informative_pairs(self):
         return [
@@ -274,6 +275,9 @@ class CryptoFusionStrategy(IStrategy):
         )
         dataframe["breakout_target"] = target
         dataframe["breakout_signal"] = signal
+        dataframe["vol_above_ma"] = (
+            dataframe["volume"] > dataframe["volume"].rolling(20).mean()
+        ).astype(int)
 
         if self.freqai_info.get("enabled", False):
             try:
@@ -306,7 +310,7 @@ class CryptoFusionStrategy(IStrategy):
         strong = [
             dataframe["fusion_prob"] >= self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
-            dataframe["volume"] > 0,
+            dataframe["vol_above_ma"] == 1,
         ]
         dataframe.loc[
             reduce(lambda x, y: x & y, strong),
@@ -317,7 +321,7 @@ class CryptoFusionStrategy(IStrategy):
             dataframe["fusion_prob"] >= self.buy_fusion_threshold.value,
             dataframe["fusion_prob"] < self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
-            dataframe["volume"] > 0,
+            dataframe["vol_above_ma"] == 1,
             dataframe["enter_long"] != 1,
         ]
         dataframe.loc[
@@ -334,7 +338,7 @@ class CryptoFusionStrategy(IStrategy):
             dataframe["breakout_signal"] == 1,
             dataframe["close"] > dataframe["sma_200"],
             dataframe["rsi_14"] < 70,
-            dataframe["volume"] > 0,
+            dataframe["vol_above_ma"] == 1,
             dataframe["enter_long"] != 1,
         ]
         dataframe.loc[
@@ -343,10 +347,16 @@ class CryptoFusionStrategy(IStrategy):
         ] = (1, "ta_breakout")
 
         # OR-path: RSI oversold bounce — mean-reversion scalp entry.
+        # Bull/sideways: strict (RSI<25, ta>10), Bear: relaxed (RSI<30, ta>0)
+        # following haguri-peng pattern of regime-specific mean-reversion.
+        is_bear = dataframe["hmm_state"] == "bear"
+        rsi_thresh = np.where(is_bear, 30, 25)
+        ta_thresh = np.where(is_bear, 0, 10)
+
         rsi_bounce = [
-            dataframe["rsi_14"] < 25,
-            dataframe["ta_score"] > 10,
-            dataframe["close"] > dataframe["sma_200"] * 0.97,
+            dataframe["rsi_14"] < rsi_thresh,
+            dataframe["ta_score"] > ta_thresh,
+            dataframe["close"] > dataframe["sma_200"] * 0.95,
             dataframe["volume"] > 0,
             dataframe["enter_long"] != 1,
         ]
@@ -395,18 +405,18 @@ class CryptoFusionStrategy(IStrategy):
 
         stop_price = trade.open_rate - (atr * self.ATR_STOP_MULT)
 
-        if current_profit > 0.04:
-            trail_price = current_rate - (atr * 0.6)
+        if current_profit > 0.02:
+            trail_price = current_rate - (atr * 0.5)
             stop_price = max(stop_price, trail_price)
-        elif current_profit > 0.02:
-            trail_price = current_rate - (atr * 0.8)
+        elif current_profit > 0.01:
+            trail_price = current_rate - (atr * 0.6)
             stop_price = max(stop_price, trail_price)
         elif current_rate > trade.open_rate + (atr * self.ATR_TRAIL_ACTIVATE):
             trail_price = current_rate - (atr * self.ATR_TRAIL_DISTANCE)
             stop_price = max(stop_price, trail_price)
 
-        if current_profit > 0.015:
-            breakeven = trade.open_rate * 1.002
+        if current_profit > 0.008:
+            breakeven = trade.open_rate * 1.001
             stop_price = max(stop_price, breakeven)
 
         return stoploss_from_absolute(stop_price, current_rate,
@@ -610,7 +620,9 @@ class CryptoFusionStrategy(IStrategy):
         # BTC multi-timeframe agreement (NFI-pattern): block alt entry when BTC
         # is below SMA20 on >= threshold of {5m, 15m, 1h, 4h, 1d}. BTC itself
         # is exempt since blocking it would be self-referential.
-        if pair != "BTC/KRW":
+        # rsi_bounce (mean-reversion) is also exempt — oversold bounces work
+        # even in bearish conditions (haguri-peng pattern).
+        if pair != "BTC/KRW" and entry_tag != "rsi_bounce":
             bearish = self._btc_bearish_tf_count()
             if bearish >= self.BTC_BEARISH_BLOCK_THRESHOLD:
                 logger.info(
