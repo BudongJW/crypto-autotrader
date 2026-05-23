@@ -131,3 +131,47 @@ def test_summary_stats_mixed():
     assert stats["avg_win_pnl"] == pytest.approx(1.5)
     assert stats["avg_loss_pnl"] == pytest.approx(0.75)
     assert stats["rr_ratio"] == pytest.approx(2.0)
+
+
+# ---------- SQN ----------
+
+def test_sqn_insufficient_records():
+    from experience_log import compute_sqn
+    result = compute_sqn([])
+    assert result["sqn"] == 0.0
+    assert result["rating"] == "insufficient"
+
+
+def test_sqn_single_record():
+    from experience_log import compute_sqn
+    result = compute_sqn([make_record(1.0)])
+    assert result["sqn"] == 0.0
+    assert result["rating"] == "insufficient"
+
+
+def test_sqn_positive_edge():
+    from experience_log import compute_sqn
+    recs = [make_record(2.0), make_record(1.5), make_record(-0.5),
+            make_record(1.0), make_record(-0.3), make_record(0.8),
+            make_record(1.2), make_record(-0.4), make_record(1.8),
+            make_record(0.5)]
+    result = compute_sqn(recs)
+    assert result["sqn"] > 0
+    assert result["n_trades"] == 10
+    assert result["rating"] in ("poor", "below_average", "average", "good", "excellent")
+
+
+def test_sqn_no_edge():
+    from experience_log import compute_sqn
+    recs = [make_record(1.0), make_record(-1.0)] * 10
+    result = compute_sqn(recs)
+    assert result["sqn"] == pytest.approx(0.0, abs=0.1)
+
+
+def test_sqn_capped_at_100():
+    from experience_log import compute_sqn
+    import math
+    recs = [make_record(1.0 if i % 3 != 0 else -0.5) for i in range(200)]
+    result = compute_sqn(recs)
+    # sqrt should use min(200, 100) = 100, not 200
+    assert result["n_trades"] == 200

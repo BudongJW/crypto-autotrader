@@ -7,6 +7,7 @@ records at learning time.
 from __future__ import annotations
 
 import json
+import math
 import threading
 from pathlib import Path
 from typing import Iterable
@@ -93,3 +94,36 @@ def compute_summary_stats(records: Iterable[dict]) -> dict:
         "avg_loss_pnl": avg_loss,
         "rr_ratio": avg_win / max(avg_loss, 0.01),
     }
+
+
+def compute_sqn(records: Iterable[dict], pnl_key: str = "pnl_pct") -> dict:
+    """
+    Van Tharp's System Quality Number.
+
+    SQN = (mean_R / stdev_R) * sqrt(N), where R = pnl per trade.
+    Rating: <1.6 poor, 2.0-4.9 average, 5.0-6.9 good, 7.0+ excellent.
+    Uses sqrt(min(N, 100)) cap to avoid SQN inflation from large sample sizes.
+    """
+    records = list(records)
+    pnls = [r.get(pnl_key, 0.0) for r in records if pnl_key in r]
+    n = len(pnls)
+    if n < 2:
+        return {"sqn": 0.0, "n_trades": n, "rating": "insufficient"}
+    mean_r = sum(pnls) / n
+    variance = sum((p - mean_r) ** 2 for p in pnls) / (n - 1)
+    std_r = math.sqrt(variance) if variance > 0 else 0.0
+    if std_r == 0:
+        return {"sqn": 0.0, "n_trades": n, "rating": "no_variance"}
+    sqn = (mean_r / std_r) * math.sqrt(min(n, 100))
+    if sqn < 1.6:
+        rating = "poor"
+    elif sqn < 2.0:
+        rating = "below_average"
+    elif sqn < 5.0:
+        rating = "average"
+    elif sqn < 7.0:
+        rating = "good"
+    else:
+        rating = "excellent"
+    return {"sqn": round(sqn, 3), "n_trades": n, "mean_r": round(mean_r, 4),
+            "std_r": round(std_r, 4), "rating": rating}

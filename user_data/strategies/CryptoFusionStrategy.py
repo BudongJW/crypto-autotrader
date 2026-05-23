@@ -48,7 +48,7 @@ try:
     )
     from .experience_log import (
         append_experience, load_experiences, migrate_legacy_json,
-        compute_summary_stats,
+        compute_summary_stats, compute_sqn,
     )
     from .validation import is_recent_degraded
     from .orderbook_lib import (
@@ -66,7 +66,7 @@ except ImportError:
     )
     from experience_log import (  # type: ignore
         append_experience, load_experiences, migrate_legacy_json,
-        compute_summary_stats,
+        compute_summary_stats, compute_sqn,
     )
     from validation import is_recent_degraded  # type: ignore
     from orderbook_lib import (  # type: ignore
@@ -131,17 +131,15 @@ class CryptoFusionStrategy(IStrategy):
     # from crowding out other slots and limits per-trade variance.
     KELLY_CAP = 0.15
 
-    # ---- Phase B: DCA (position_adjustment) ----
+    # ---- Phase B: Livermore pyramiding (position_adjustment) ----
     position_adjustment_enable = True
     max_entry_position_adjustment = 2
-    # Conservative DCA tiers: total exposure 1 + 0.3 + 0.3 = 1.6x initial.
-    # Earlier tuning at 2.5x meant a -15% drawdown lost ~38% of the per-pair
-    # allocation — with 5 concurrent pairs that becomes a system-wide tail
-    # risk. Each step still requires fusion_prob >= buy threshold AND
-    # HMM != bear (see adjust_trade_position).
-    DCA_STEPS = (
-        (-0.025, 0.30),
-        (-0.05, 0.30),
+    # Pyramid into winners: total exposure 1 + 0.3 + 0.3 = 1.6x initial.
+    # Livermore/O'Neil principle: never add to a losing position.
+    # Each step requires fusion_prob >= buy threshold AND HMM != bear.
+    PYRAMID_STEPS = (
+        (0.01, 0.30),
+        (0.02, 0.30),
     )
 
     # ---- Protections ----
@@ -280,6 +278,11 @@ class CryptoFusionStrategy(IStrategy):
         dataframe["vol_above_ma"] = (
             dataframe["volume"] > dataframe["volume"].rolling(20).mean()
         ).astype(int)
+        dataframe["stage2_aligned"] = (
+            (dataframe["close"] > dataframe["sma_50"])
+            & (dataframe["sma_50"] > dataframe["sma_150"])
+            & (dataframe["sma_150"] > dataframe["sma_200"])
+        ).astype(int)
 
         if self.freqai_info.get("enabled", False):
             try:
@@ -331,6 +334,7 @@ class CryptoFusionStrategy(IStrategy):
             dataframe["fusion_prob"] >= self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
             dataframe["vol_above_ma"] == 1,
+            dataframe["stage2_aligned"] == 1,
         ]
         dataframe.loc[
             reduce(lambda x, y: x & y, strong),
@@ -342,6 +346,7 @@ class CryptoFusionStrategy(IStrategy):
             dataframe["fusion_prob"] < self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
             dataframe["vol_above_ma"] == 1,
+            dataframe["stage2_aligned"] == 1,
             dataframe["enter_long"] != 1,
         ]
         dataframe.loc[
@@ -359,6 +364,7 @@ class CryptoFusionStrategy(IStrategy):
             dataframe["close"] > dataframe["sma_200"],
             dataframe["rsi_14"] < 70,
             dataframe["vol_above_ma"] == 1,
+            dataframe["stage2_aligned"] == 1,
             dataframe["enter_long"] != 1,
         ]
         dataframe.loc[
@@ -443,7 +449,7 @@ class CryptoFusionStrategy(IStrategy):
                                       is_short=trade.is_short)
 
     # =========================================================================
-    # DCA — adjust_trade_position (Phase B)
+    # Pyramiding — adjust_trade_position (Phase B)
     # =========================================================================
     def adjust_trade_position(
         self, trade: Trade, current_time: datetime, current_rate: float,
@@ -452,17 +458,16 @@ class CryptoFusionStrategy(IStrategy):
         current_entry_profit: float, current_exit_profit: float, **kwargs,
     ) -> float | None:
         """
-        Step into losing-but-still-bullish trades to improve average entry.
+        Livermore-style pyramiding: add to winning trades only.
 
-        Gates: (1) fusion_prob still ≥ buy threshold, (2) HMM not bear,
-        (3) drawdown threshold for the next DCA step has been crossed.
+        Gates: (1) trade must be profitable above threshold,
+        (2) fusion_prob still >= buy threshold, (3) HMM not bear.
         """
         df, _ = self.dp.get_analyzed_dataframe(trade.pair, self.timeframe)
         if df is None or df.empty:
             return None
         last = df.iloc[-1]
 
-        # Signal must still be bullish — never DCA into a deteriorating thesis.
         fusion_prob = float(last.get("fusion_prob", 0.5))
         if fusion_prob < float(self.buy_fusion_threshold.value):
             return None
@@ -474,13 +479,12 @@ class CryptoFusionStrategy(IStrategy):
         except Exception:  # noqa: BLE001
             filled = []
         n_entries = len(filled)
-        # n_entries includes the initial entry; DCA_STEPS indexes 0=first add.
         step = n_entries - 1
-        if step < 0 or step >= len(self.DCA_STEPS):
+        if step < 0 or step >= len(self.PYRAMID_STEPS):
             return None
 
-        profit_threshold, mult = self.DCA_STEPS[step]
-        if current_profit > profit_threshold:
+        profit_threshold, mult = self.PYRAMID_STEPS[step]
+        if current_profit < profit_threshold:
             return None
 
         try:
@@ -494,13 +498,13 @@ class CryptoFusionStrategy(IStrategy):
         add_stake = min(add_stake, float(max_stake))
 
         logger.info(
-            "DCA step %d on %s: profit=%.2f%% threshold=%.2f%% adding %.0f KRW "
+            "PYRAMID step %d on %s: profit=+%.2f%% threshold=+%.2f%% adding %.0f KRW "
             "(fusion=%.2f)",
             step + 1, trade.pair, current_profit * 100, profit_threshold * 100,
             add_stake, fusion_prob,
         )
         self._record_decision(
-            "dca", trade.pair, step=step + 1,
+            "pyramid", trade.pair, step=step + 1,
             profit_pct=round(current_profit * 100, 2),
             add_stake=round(add_stake, 0),
             fusion=round(fusion_prob, 3),
@@ -565,6 +569,9 @@ class CryptoFusionStrategy(IStrategy):
         stats = compute_summary_stats(recs)
         record_count = stats.get("count", 0)
 
+        sqn_info = compute_sqn(recs)
+        sqn_value = sqn_info.get("sqn", 0.0)
+
         # Optional bankroll input for absolute Kelly sizing.
         bankroll = None
         try:
@@ -584,6 +591,12 @@ class CryptoFusionStrategy(IStrategy):
             kelly_scale=self.KELLY_SCALE,
             kelly_cap=self.KELLY_CAP,
         )
+
+        # Van Tharp SQN gate: reduce sizing when system quality is poor.
+        if record_count >= 30 and sqn_value < 2.0:
+            stake *= 0.5
+            logger.info("SQN gate: %.2f (%s) — sizing halved",
+                        sqn_value, sqn_info.get("rating", "?"))
 
         # Bear regime: half the Kelly recommendation (defensive).
         if last.get("hmm_state", "sideways") == "bear":
@@ -737,7 +750,7 @@ class CryptoFusionStrategy(IStrategy):
         dataframe["di_plus"] = ta.PLUS_DI(dataframe, timeperiod=14)
         dataframe["di_minus"] = ta.MINUS_DI(dataframe, timeperiod=14)
 
-        for p in (5, 10, 20, 60, 200):
+        for p in (5, 10, 20, 50, 60, 150, 200):
             dataframe[f"sma_{p}"] = ta.SMA(dataframe, timeperiod=p)
 
         dataframe["obv"] = ta.OBV(dataframe)
@@ -1062,7 +1075,7 @@ class CryptoFusionStrategy(IStrategy):
     def _record_decision(self, kind: str, pair: str, **details) -> None:
         """Append a strategy decision event to the in-memory ring buffer.
 
-        ``kind`` ∈ {blocked, passed, dca, exit}. Details serialised verbatim
+        ``kind`` ∈ {blocked, passed, pyramid, exit}. Details serialised verbatim
         into ``strategy_state.json`` for the live dashboard. Failures are
         suppressed so a decision-log issue cannot break trading.
         """
@@ -1158,6 +1171,7 @@ class CryptoFusionStrategy(IStrategy):
                         float(last.get("hmm_confidence", 0.5)), 3,
                     ),
                     "breakout_signal": int(last.get("breakout_signal", 0)),
+                    "stage2": int(last.get("stage2_aligned", 0)),
                     "rsi": round(float(last.get("rsi_14", 50)), 1),
                     "atr_ratio": round(float(last.get("atr_ratio", 1.0)), 2),
                 })
@@ -1518,6 +1532,10 @@ class CryptoFusionStrategy(IStrategy):
 
         weights_before = self._load_fusion_weights()
         self._save_fusion_weights(w)
+
+        sqn_info = compute_sqn(experiences)
+        sqn_value = sqn_info.get("sqn", 0.0)
+
         logger.info(
             "Fusion weights updated: wr=%.1f%%, rr=%.2f, avg_win=%.2f%%, bias=%.3f",
             win_rate * 100, avg_win / max(avg_loss, 0.01), avg_win, w["bias"],
@@ -1532,4 +1550,6 @@ class CryptoFusionStrategy(IStrategy):
             weights_before={k: round(v, 4) for k, v in weights_before.items()},
             weights_after={k: round(v, 4) for k, v in w.items()},
             tag_stats=tag_stats,
+            sqn=sqn_value,
+            sqn_rating=sqn_info.get("rating"),
         )

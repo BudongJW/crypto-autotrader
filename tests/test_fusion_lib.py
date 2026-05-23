@@ -333,3 +333,36 @@ def test_freqai_target_fees_shift_target_below_half():
     target = freqai_target_continuous(close, label_period=20, fee_round_trip=0.0015)
     valid = target.dropna()
     assert (valid < 0.5).all()
+
+
+# ============================================================================
+# Stage 2 aligned (Minervini SEPA trend template)
+# ============================================================================
+def test_stage2_aligned():
+    # Stage 2: close > sma50 > sma150 > sma200
+    df = pd.DataFrame({
+        "close": [100.0],
+        "sma_50": [95.0],
+        "sma_150": [90.0],
+        "sma_200": [85.0],
+    })
+    aligned = (
+        (df["close"] > df["sma_50"])
+        & (df["sma_50"] > df["sma_150"])
+        & (df["sma_150"] > df["sma_200"])
+    ).astype(int)
+    assert aligned.iloc[0] == 1
+
+    # Not Stage 2: sma50 < sma150
+    df2 = pd.DataFrame({
+        "close": [100.0],
+        "sma_50": [88.0],
+        "sma_150": [90.0],
+        "sma_200": [85.0],
+    })
+    not_aligned = (
+        (df2["close"] > df2["sma_50"])
+        & (df2["sma_50"] > df2["sma_150"])
+        & (df2["sma_150"] > df2["sma_200"])
+    ).astype(int)
+    assert not_aligned.iloc[0] == 0
