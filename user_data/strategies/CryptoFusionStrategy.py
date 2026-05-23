@@ -132,6 +132,11 @@ class CryptoFusionStrategy(IStrategy):
     # from crowding out other slots and limits per-trade variance.
     KELLY_CAP = 0.15
 
+    # ---- Bounce-specific risk parameters ----
+    ATR_STOP_MULT_BOUNCE = 2.5   # wider stop for mean-reversion (vs 1.2 momentum)
+    SAFE_DIP_MAX = 0.08          # block rsi_bounce if 6h drop > 8%
+    BOUNCE_BREAKEVEN = 0.015     # breakeven threshold for bounce (vs 0.008 momentum)
+
     # ---- Phase B: Livermore pyramiding (position_adjustment) ----
     position_adjustment_enable = True
     max_entry_position_adjustment = 2
@@ -353,6 +358,26 @@ class CryptoFusionStrategy(IStrategy):
             & (dataframe["sma_150"] > dataframe["sma_200"])
         ).astype(int)
 
+        # Safe-dip: NFI-style drop protection — block bounce if already crashed
+        high_max_6h = dataframe["high"].rolling(72).max()
+        dataframe["safe_dip"] = (
+            (high_max_6h - dataframe["close"])
+            / high_max_6h.replace(0, np.nan)
+        )
+
+        # 1h downtrend approximation from 5m bars (12 bars ≈ 1h)
+        high_1h = dataframe["high"].rolling(12).max()
+        dataframe["not_downtrend_3h"] = (~(
+            (high_1h < high_1h.shift(12))
+            & (high_1h.shift(12) < high_1h.shift(24))
+        )).fillna(True).astype(int)
+
+        # Volume spike (1.5× 20MA) for bounce confirmation
+        dataframe["vol_spike"] = (
+            dataframe["volume"]
+            > dataframe["volume"].rolling(20).mean() * 1.5
+        ).astype(int)
+
         if self.freqai_info.get("enabled", False):
             try:
                 dataframe = self.freqai.start(dataframe, metadata, self)
@@ -441,18 +466,24 @@ class CryptoFusionStrategy(IStrategy):
             ["enter_long", "enter_tag"],
         ] = (1, "ta_breakout")
 
-        # OR-path: RSI oversold bounce — mean-reversion scalp entry.
-        # Bull/sideways: strict (RSI<25, ta>10), Bear: relaxed (RSI<30, ta>0)
-        # following haguri-peng pattern of regime-specific mean-reversion.
+        # OR-path: RSI reversal bounce — mean-reversion entry with confirmation.
+        # Requires RSI to cross ABOVE threshold (reversal started, not still
+        # falling) + NFI-style safe-dip guard + 1h downtrend filter + vol spike.
         is_bear = dataframe["hmm_state"] == "bear"
         rsi_thresh = np.where(is_bear, 30, 25)
         ta_thresh = np.where(is_bear, 0, 10)
 
+        rsi_prev = dataframe["rsi_14"].shift(1)
+        rsi_now = dataframe["rsi_14"]
+        rsi_crossed_up = (rsi_now > rsi_thresh) & (rsi_prev <= rsi_thresh)
+
         rsi_bounce = [
-            dataframe["rsi_14"] < rsi_thresh,
+            rsi_crossed_up,
             dataframe["ta_score"] > ta_thresh,
             dataframe["close"] > dataframe["sma_200"] * 0.95,
-            dataframe["volume"] > 0,
+            dataframe["safe_dip"] < self.SAFE_DIP_MAX,
+            dataframe["not_downtrend_3h"] == 1,
+            dataframe["vol_spike"] == 1,
             dataframe["enter_long"] != 1,
         ]
         dataframe.loc[
@@ -498,7 +529,10 @@ class CryptoFusionStrategy(IStrategy):
         if atr <= 0 or trade.open_rate <= 0:
             return self.stoploss
 
-        stop_price = trade.open_rate - (atr * self.ATR_STOP_MULT)
+        entry_tag = getattr(trade, 'enter_tag', '') or ''
+        is_bounce = entry_tag == "rsi_bounce"
+        atr_mult = self.ATR_STOP_MULT_BOUNCE if is_bounce else self.ATR_STOP_MULT
+        stop_price = trade.open_rate - (atr * atr_mult)
 
         if current_profit > 0.02:
             trail_price = current_rate - (atr * 0.5)
@@ -510,7 +544,8 @@ class CryptoFusionStrategy(IStrategy):
             trail_price = current_rate - (atr * self.ATR_TRAIL_DISTANCE)
             stop_price = max(stop_price, trail_price)
 
-        if current_profit > 0.008:
+        breakeven_pct = self.BOUNCE_BREAKEVEN if is_bounce else 0.008
+        if current_profit > breakeven_pct:
             breakeven = trade.open_rate * 1.001
             stop_price = max(stop_price, breakeven)
 
@@ -667,9 +702,9 @@ class CryptoFusionStrategy(IStrategy):
             logger.info("SQN gate: %.2f (%s) — sizing halved",
                         sqn_value, sqn_info.get("rating", "?"))
 
-        # Bear regime: half the Kelly recommendation (defensive).
+        # Bear regime: cut to 30% of Kelly (FinRL/academic consensus 25-30%).
         if last.get("hmm_state", "sideways") == "bear":
-            stake *= 0.7
+            stake *= 0.3
 
         stake = min(stake, max_stake)
         if min_stake is not None:
