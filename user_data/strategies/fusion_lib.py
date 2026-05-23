@@ -230,14 +230,15 @@ def compute_fusion(
 
 def freqai_target_continuous(
     close: Series, label_period: int, fee_round_trip: float = 0.0015,
-    scale: float = 50.0,
+    scale: float = 150.0,
 ) -> Series:
     """
     Continuous target in (0, 1) — sigmoid of net return.
 
     Designed for LightGBMRegressor: smooth, monotone in true forward return,
     centered at 0.5 for net-zero outcome. `scale` controls how quickly the
-    target saturates (default 50 → ±2% net pct maps to ~0.27 / 0.73).
+    target saturates (150 → ±0.5% net maps to ~0.32 / 0.68, giving the
+    model enough spread to produce confident predictions for 1h horizon).
     """
     future_close = close.shift(-label_period)
     pct_change = (future_close - close) / close

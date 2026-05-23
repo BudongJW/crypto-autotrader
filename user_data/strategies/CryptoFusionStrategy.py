@@ -157,8 +157,8 @@ class CryptoFusionStrategy(IStrategy):
             {"method": "CooldownPeriod", "stop_duration_candles": 5},
         ]
 
-    minimal_roi = {"0": 0.03, "30": 0.02, "60": 0.012, "120": 0.008, "360": 0.004}
-    stoploss = -0.025
+    minimal_roi = {"0": 0.03, "20": 0.02, "45": 0.015, "90": 0.01, "180": 0.007}
+    stoploss = -0.02
     use_custom_stoploss = True
     trailing_stop = False
 
@@ -325,18 +325,36 @@ class CryptoFusionStrategy(IStrategy):
             ["enter_long", "enter_tag"],
         ] = (1, "fusion_buy")
 
-        if not self.freqai_info.get("enabled", False):
-            ta_fallback = [
-                dataframe["ta_score"] > self.buy_ta_fallback.value,
-                dataframe["breakout_signal"] == 1,
-                dataframe["close"] > dataframe["sma_200"],
-                dataframe["volume"] > 0,
-                dataframe["enter_long"] != 1,
-            ]
-            dataframe.loc[
-                reduce(lambda x, y: x & y, ta_fallback),
-                ["enter_long", "enter_tag"],
-            ] = (1, "ta_breakout")
+        # OR-path: strong TA + breakout — independent of fusion threshold.
+        # Fires when TA composite is convincingly bullish AND breakout confirms,
+        # regardless of whether LGBM/HMM agree. Inspired by NFIX multi-path
+        # entry architecture.
+        ta_breakout = [
+            dataframe["ta_score"] > self.buy_ta_fallback.value,
+            dataframe["breakout_signal"] == 1,
+            dataframe["close"] > dataframe["sma_200"],
+            dataframe["rsi_14"] < 70,
+            dataframe["volume"] > 0,
+            dataframe["enter_long"] != 1,
+        ]
+        dataframe.loc[
+            reduce(lambda x, y: x & y, ta_breakout),
+            ["enter_long", "enter_tag"],
+        ] = (1, "ta_breakout")
+
+        # OR-path: RSI oversold bounce — mean-reversion scalp entry.
+        rsi_bounce = [
+            dataframe["rsi_14"] < 25,
+            dataframe["ta_score"] > 10,
+            dataframe["close"] > dataframe["sma_200"] * 0.97,
+            dataframe["volume"] > 0,
+            dataframe["enter_long"] != 1,
+        ]
+        dataframe.loc[
+            reduce(lambda x, y: x & y, rsi_bounce),
+            ["enter_long", "enter_tag"],
+        ] = (1, "rsi_bounce")
+
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -356,6 +374,10 @@ class CryptoFusionStrategy(IStrategy):
                       ["exit_long", "exit_tag"]] = (1, "exit_rsi_overbought")
         dataframe.loc[rsi_extreme & (dataframe["exit_long"] != 1),
                       ["exit_long", "exit_tag"]] = (1, "exit_rsi_extreme")
+
+        conflict = (dataframe["enter_long"] == 1) & (dataframe["exit_long"] == 1)
+        dataframe.loc[conflict, ["exit_long", "exit_tag"]] = (0, "")
+
         return dataframe
 
     # =========================================================================
@@ -779,15 +801,13 @@ class CryptoFusionStrategy(IStrategy):
         dataframe["%-range_expansion"] = hl_range / hl_avg
         return dataframe
 
-    # FIX C: continuous target (sigmoid of net-of-fees return) — matches Regressor
     def set_freqai_targets(self, dataframe, metadata, **kwargs):
         label_period = self.freqai_info.get("feature_parameters", {}).get(
-            "label_period_candles", 24
+            "label_period_candles", 12
         )
-        # Upbit KRW round-trip ≈ 0.10% fee + ~0.05% spread/slippage buffer
         dataframe["&-direction"] = freqai_target_continuous(
             dataframe["close"], label_period=label_period,
-            fee_round_trip=0.0015, scale=50.0,
+            fee_round_trip=0.0015,
         )
         return dataframe
 
@@ -1112,20 +1132,28 @@ class CryptoFusionStrategy(IStrategy):
         if fps:
             fp_min, fp_max = min(fps), max(fps)
             fp_mean = sum(fps) / len(fps)
+            fps_sorted = sorted(fps)
+            fp_p90 = fps_sorted[int(len(fps_sorted) * 0.9)] if len(fps_sorted) > 1 \
+                else fp_max
         else:
-            fp_min = fp_max = fp_mean = float("nan")
+            fp_min = fp_max = fp_mean = fp_p90 = float("nan")
+
+        lgbm_vals = [pp.get("lgbm_prob", 0.5) for pp in per_pair
+                     if pp.get("lgbm_prob") is not None]
+        lgbm_spread = f"{min(lgbm_vals):.3f}-{max(lgbm_vals):.3f}" \
+            if lgbm_vals else "n/a"
 
         logger.info(
             "HEARTBEAT pairs=%d btc_close=%s hmm=%s hmm_model=%s "
-            "btc_bearish_tfs=%d/%d fusion[min/mean/max]=%.3f/%.3f/%.3f "
-            "orderbook=%s experiences=%d",
+            "btc_bearish_tfs=%d/%d fusion[min/mean/p90/max]=%.3f/%.3f/%.3f/%.3f "
+            "lgbm_spread=%s orderbook=%s experiences=%d",
             len(whitelist),
             f"{btc_close:.0f}" if btc_close else "n/a",
             btc_state,
             "loaded" if self._hmm_model is not None else "none",
             bearish, len(self.BTC_MULTI_TFS),
-            fp_min, fp_mean, fp_max,
-            ob_status, exp_count,
+            fp_min, fp_mean, fp_p90, fp_max,
+            lgbm_spread, ob_status, exp_count,
         )
 
         # Persist extended state for the live dashboard (publish_state.py polls
