@@ -904,6 +904,23 @@ class CryptoFusionStrategy(IStrategy):
         price_dir = np.sign(dataframe["close"].diff(period))
         vol_dir = np.sign(dataframe["volume"].diff(period))
         dataframe[f"%-vp_divergence-{period}"] = price_dir * vol_dir
+
+        rsi = dataframe[f"%-rsi-{period}"]
+        dataframe[f"%-rsi_slope-{period}"] = rsi.diff(3)
+
+        stoch_rsi = (rsi - rsi.rolling(period).min()) / (
+            rsi.rolling(period).max() - rsi.rolling(period).min()
+        ).replace(0, np.nan)
+        dataframe[f"%-stoch_rsi-{period}"] = stoch_rsi
+
+        ha_close = (dataframe["open"] + dataframe["high"]
+                    + dataframe["low"] + dataframe["close"]) / 4
+        ha_open = (dataframe["open"].shift(1) + dataframe["close"].shift(1)) / 2
+        ha_range = (dataframe["high"] - dataframe["low"]).replace(0, np.nan)
+        dataframe[f"%-ha_body-{period}"] = ((ha_close - ha_open) / ha_range).rolling(
+            min(period, 5)
+        ).mean()
+
         return dataframe
 
     def feature_engineering_expand_basic(self, dataframe, metadata, **kwargs):
