@@ -152,13 +152,13 @@ class CryptoFusionStrategy(IStrategy):
     @property
     def protections(self):
         return [
-            {"method": "MaxDrawdown", "lookback_period_candles": 288,
-             "trade_limit": 4, "stop_duration_candles": 60,
-             "max_allowed_drawdown": 0.1},
-            {"method": "StoplossGuard", "lookback_period_candles": 60,
-             "trade_limit": 3, "stop_duration_candles": 30,
+            {"method": "CooldownPeriod", "stop_duration_candles": 2},
+            {"method": "StoplossGuard", "lookback_period_candles": 12,
+             "trade_limit": 2, "stop_duration_candles": 6,
+             "only_per_pair": True},
+            {"method": "StoplossGuard", "lookback_period_candles": 24,
+             "trade_limit": 4, "stop_duration_candles": 12,
              "only_per_pair": False},
-            {"method": "CooldownPeriod", "stop_duration_candles": 5},
         ]
 
     minimal_roi = {"0": 0.015, "15": 0.01, "30": 0.007, "60": 0.005, "120": 0.003}
