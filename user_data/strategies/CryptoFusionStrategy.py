@@ -106,8 +106,8 @@ class CryptoFusionStrategy(IStrategy):
     BREAKOUT_K = 0.5
     BREAKOUT_RANGE_CANDLES = 48          # 48 × 5m = 4h
     ATR_STOP_MULT = 1.2
-    ATR_TRAIL_ACTIVATE = 1.5
-    ATR_TRAIL_DISTANCE = 0.8
+    ATR_TRAIL_ACTIVATE = 1.0
+    ATR_TRAIL_DISTANCE = 0.7
     TURBULENCE_MULT = 2.0
     MAX_CORRELATED_POSITIONS = 4
 
@@ -133,9 +133,9 @@ class CryptoFusionStrategy(IStrategy):
     KELLY_CAP = 0.15
 
     # ---- Bounce-specific risk parameters ----
-    ATR_STOP_MULT_BOUNCE = 2.5   # wider stop for mean-reversion (vs 1.2 momentum)
-    SAFE_DIP_MAX = 0.08          # block rsi_bounce if 6h drop > 8%
-    BOUNCE_BREAKEVEN = 0.015     # breakeven threshold for bounce (vs 0.008 momentum)
+    ATR_STOP_MULT_BOUNCE = 2.0
+    SAFE_DIP_MAX = 0.08
+    BOUNCE_BREAKEVEN = 0.01
 
     # ---- Phase B: Livermore pyramiding (position_adjustment) ----
     position_adjustment_enable = True
@@ -161,7 +161,7 @@ class CryptoFusionStrategy(IStrategy):
              "only_per_pair": False},
         ]
 
-    minimal_roi = {"0": 0.015, "15": 0.01, "30": 0.007, "60": 0.005, "120": 0.003}
+    minimal_roi = {"0": 0.015, "5": 0.01, "10": 0.007, "15": 0.005, "30": 0.004, "60": 0.003}
     stoploss = -0.015
     use_custom_stoploss = True
     trailing_stop = False
@@ -517,6 +517,39 @@ class CryptoFusionStrategy(IStrategy):
         return dataframe
 
     # =========================================================================
+    # Quick-profit exit — take profit when signal fades
+    # =========================================================================
+    QUICK_EXIT_FUSION_DROP = 0.08
+    QUICK_EXIT_MIN_PROFIT = 0.003
+    STALE_TRADE_CANDLES = 30
+    STALE_TRADE_MIN_PROFIT = 0.002
+
+    def custom_exit(self, pair, trade, current_time, current_rate,
+                    current_profit, **kwargs):
+        df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        if df is None or df.empty:
+            return None
+        last = df.iloc[-1]
+        fusion_now = float(last.get("fusion_prob", 0.5))
+        tag = getattr(trade, "enter_tag", "") or ""
+
+        if current_profit >= self.QUICK_EXIT_MIN_PROFIT and \
+           tag in ("fusion_strong", "fusion_buy"):
+            if tag == "fusion_strong":
+                entry_fusion = float(self.buy_fusion_strong.value)
+            else:
+                entry_fusion = float(self.buy_fusion_threshold.value)
+            if fusion_now < entry_fusion - self.QUICK_EXIT_FUSION_DROP:
+                return "exit_quick_fusion_fade"
+
+        trade_dur = (current_time - trade.open_date_utc).total_seconds() / 300
+        if trade_dur >= self.STALE_TRADE_CANDLES and \
+           current_profit >= self.STALE_TRADE_MIN_PROFIT:
+            return "exit_stale_profit"
+
+        return None
+
+    # =========================================================================
     # ATR-based custom stoploss
     # =========================================================================
     def custom_stoploss(self, pair, trade, current_time, current_rate,
@@ -534,17 +567,20 @@ class CryptoFusionStrategy(IStrategy):
         atr_mult = self.ATR_STOP_MULT_BOUNCE if is_bounce else self.ATR_STOP_MULT
         stop_price = trade.open_rate - (atr * atr_mult)
 
-        if current_profit > 0.02:
+        if current_profit > 0.015:
+            trail_price = current_rate - (atr * 0.4)
+            stop_price = max(stop_price, trail_price)
+        elif current_profit > 0.008:
             trail_price = current_rate - (atr * 0.5)
             stop_price = max(stop_price, trail_price)
-        elif current_profit > 0.01:
+        elif current_profit > 0.005:
             trail_price = current_rate - (atr * 0.6)
             stop_price = max(stop_price, trail_price)
         elif current_rate > trade.open_rate + (atr * self.ATR_TRAIL_ACTIVATE):
             trail_price = current_rate - (atr * self.ATR_TRAIL_DISTANCE)
             stop_price = max(stop_price, trail_price)
 
-        breakeven_pct = self.BOUNCE_BREAKEVEN if is_bounce else 0.008
+        breakeven_pct = self.BOUNCE_BREAKEVEN if is_bounce else 0.005
         if current_profit > breakeven_pct:
             breakeven = trade.open_rate * 1.001
             stop_price = max(stop_price, breakeven)
