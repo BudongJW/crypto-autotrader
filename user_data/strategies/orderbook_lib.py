@@ -63,23 +63,39 @@ def cumulative_imbalance(book: Book, levels: int = 5) -> float:
     return (bq - aq) / total
 
 
-def microprice(book: Book) -> float | None:
-    """
-    Depth-weighted mid: ``(bid_qty·ask + ask_qty·bid) / (bid_qty + ask_qty)``.
+def microprice(book: Book, levels: int = 5) -> float | None:
+    """Multi-level depth-weighted mid using inverse-distance weighting.
 
-    Predicts short-horizon execution price better than the unweighted mid
-    when book depth is asymmetric. Returns None if either side missing.
+    Each level's weight = qty / (1 + distance_from_mid), so deeper levels
+    contribute less. Falls back to L1-only if only one level per side.
     """
-    bids = _safe_levels(book, "bids", 1)
-    asks = _safe_levels(book, "asks", 1)
+    bids = _safe_levels(book, "bids", levels)
+    asks = _safe_levels(book, "asks", levels)
     if not bids or not asks:
         return None
-    bp, bq = bids[0]
-    ap, aq = asks[0]
-    total = bq + aq
+    mid = (bids[0][0] + asks[0][0]) / 2
+    if mid <= 0:
+        return None
+    w_bid = 0.0
+    w_ask = 0.0
+    wp_bid = 0.0
+    wp_ask = 0.0
+    for p, q in bids:
+        dist = 1.0 + abs(p - mid) / mid
+        w = q / dist
+        w_bid += w
+        wp_bid += w * p
+    for p, q in asks:
+        dist = 1.0 + abs(p - mid) / mid
+        w = q / dist
+        w_ask += w
+        wp_ask += w * p
+    total = w_bid + w_ask
     if total == 0:
         return None
-    return (bq * ap + aq * bp) / total
+    vwap_bid = wp_bid / w_bid if w_bid > 0 else bids[0][0]
+    vwap_ask = wp_ask / w_ask if w_ask > 0 else asks[0][0]
+    return (w_bid * vwap_ask + w_ask * vwap_bid) / total
 
 
 def spread_ratio(book: Book) -> float | None:

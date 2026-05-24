@@ -121,8 +121,8 @@ class CryptoFusionStrategy(IStrategy):
 
     # ---- Phase B: orderbook microstructure gate ----
     ORDERBOOK_LEVELS = 5
-    ORDERBOOK_MIN_CUM_IMB = -0.30   # block alt entry if top-5 imbalance < this
-    ORDERBOOK_MAX_SPREAD = 0.005    # 0.5% of mid
+    ORDERBOOK_MIN_CUM_IMB = -0.70
+    ORDERBOOK_MAX_SPREAD = 0.005
 
     # ---- Phase B: Kelly position sizing ----
     KELLY_MIN_RECORDS = 30          # need this many experiences before trusting Kelly
@@ -664,7 +664,7 @@ class CryptoFusionStrategy(IStrategy):
                 if hasattr(self.dp, "orderbook") else None
         except Exception:  # noqa: BLE001
             return proposed_rate
-        mp = orderbook_microprice(book) if book else None
+        mp = orderbook_microprice(book, levels=self.ORDERBOOK_LEVELS) if book else None
         if mp is None or mp <= 0:
             return proposed_rate
         # For longs, microprice biased toward ask is conservative on entry.
@@ -826,12 +826,14 @@ class CryptoFusionStrategy(IStrategy):
             )
             if not ok:
                 logger.info(
-                    "Orderbook gate blocked %s (imb=%.2f spread=%s)",
-                    pair, metrics.get("cum_imb", 0.0),
+                    "Orderbook gate blocked %s (L1=%.2f cum5=%.2f spread=%s)",
+                    pair, metrics.get("top_imb", 0.0),
+                    metrics.get("cum_imb", 0.0),
                     f"{metrics['spread']:.4f}" if metrics.get("spread") else "n/a",
                 )
                 self._record_decision(
                     "blocked", pair, reason="orderbook",
+                    top_imb=round(float(metrics.get("top_imb", 0.0)), 3),
                     cum_imb=round(float(metrics.get("cum_imb", 0.0)), 3),
                     spread=round(float(metrics["spread"]), 5)
                     if metrics.get("spread") else None,
