@@ -440,7 +440,7 @@ class CryptoFusionStrategy(IStrategy):
             dataframe["fusion_prob"] < self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
             dataframe["vol_above_ma"] == 1,
-            dataframe["stage2_aligned"] == 1,
+            dataframe["close"] > dataframe["sma_50"],
             dataframe["enter_long"] != 1,
         ]
         dataframe.loc[
