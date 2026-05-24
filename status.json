@@ -1,12 +1,20 @@
 {
-  "updated_at": "2026-05-24T06:05:03.959263+00:00",
+  "updated_at": "2026-05-24T08:07:37.690674+00:00",
   "mode": "dry_run",
   "open_trades": [],
-  "closed_trades_today": [],
-  "total_profit_pct": 0.0,
-  "win_rate": 0.0,
-  "total_trades": 0,
-  "strategy_state": {
-    "available": false
-  }
+  "closed_trades_today": [
+    {
+      "pair": "ETH/KRW",
+      "profit_pct": -0.23,
+      "close_date": "2026-05-24 01:59:36.699000",
+      "exit_reason": "exit_fusion_weak"
+    }
+  ],
+  "total_profit_pct": -0.4,
+  "win_rate": 14.3,
+  "total_trades": 7,
+  "total_profit_krw": -1166.0,
+  "best_trade_pct": 0.02,
+  "worst_trade_pct": -0.83,
+  "max_drawdown_krw": 1166.0
 }
