@@ -1,12 +1,20 @@
 {
-  "updated_at": "2026-05-25T18:16:47.131396+00:00",
+  "updated_at": "2026-05-25T19:18:13.456074+00:00",
   "mode": "dry_run",
   "open_trades": [],
-  "closed_trades_today": [],
-  "total_profit_pct": 0.0,
-  "win_rate": 0.0,
-  "total_trades": 0,
-  "strategy_state": {
-    "available": false
-  }
+  "closed_trades_today": [
+    {
+      "pair": "XRP/KRW",
+      "profit_pct": -0.41,
+      "close_date": "2026-05-25 02:35:37.118000",
+      "exit_reason": "trailing_stop_loss"
+    }
+  ],
+  "total_profit_pct": -0.4,
+  "win_rate": 11.1,
+  "total_trades": 9,
+  "total_profit_krw": -1608.0,
+  "best_trade_pct": 0.02,
+  "worst_trade_pct": -0.83,
+  "max_drawdown_krw": 1608.0
 }
