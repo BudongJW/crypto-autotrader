@@ -34,7 +34,8 @@ jobs:
           restore-keys: trader-state-
 
       - name: Generate status report
-        run: python scripts/generate_status.py
+        # publish_state.py = generate_status + strategy_state.json merge
+        run: python scripts/publish_state.py
 
       - name: Generate daily journal
         run: python scripts/generate_journal.py

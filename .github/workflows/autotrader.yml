@@ -102,7 +102,9 @@ jobs:
 
       - name: Generate status report
         if: always()
-        run: python scripts/generate_status.py || echo "Status generation skipped"
+        # publish_state.py = generate_status + strategy_state.json merge
+        # → dashboard의 per-pair / decisions / thresholds 섹션이 채워짐
+        run: python scripts/publish_state.py || echo "Status generation skipped"
 
       - name: Generate trading journal
         if: always()
