@@ -1,12 +1,13 @@
 {
-  "updated_at": "2026-05-26T03:54:36.535391+00:00",
+  "updated_at": "2026-05-26T07:12:45.539930+00:00",
   "mode": "dry_run",
   "open_trades": [],
   "closed_trades_today": [],
-  "total_profit_pct": 0.0,
-  "win_rate": 0.0,
-  "total_trades": 0,
-  "strategy_state": {
-    "available": false
-  }
+  "total_profit_pct": -0.4,
+  "win_rate": 11.1,
+  "total_trades": 9,
+  "total_profit_krw": -1608.0,
+  "best_trade_pct": 0.02,
+  "worst_trade_pct": -0.83,
+  "max_drawdown_krw": 1608.0
 }
