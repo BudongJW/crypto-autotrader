@@ -34,11 +34,15 @@ jobs:
           cache: pip
 
       - name: Restore trader cache (read-only)
+        # paths MUST match autotrader.yml save step exactly — cache@v4 treats
+        # path mismatch as a miss even when key/restore-keys match.
         uses: actions/cache/restore@v4
         with:
           path: |
             user_data/logs/
             user_data/tradesv3.sqlite
+            user_data/models/
+            user_data/freqaimodels/
           key: trader-state-${{ github.run_id }}
           restore-keys: |
             trader-state-
