@@ -1,51 +1,8 @@
 {
-  "updated_at": "2026-05-26T23:13:52.279782+00:00",
+  "updated_at": "2026-05-27T00:19:19.815275+00:00",
   "mode": "dry_run",
   "open_trades": [],
-  "closed_trades_today": [
-    {
-      "pair": "ETH/KRW",
-      "profit_pct": -0.26,
-      "close_date": "2026-05-26 09:08:00.369000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "LINK/KRW",
-      "profit_pct": -0.42,
-      "close_date": "2026-05-26 09:28:46.319000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "ETH/KRW",
-      "profit_pct": -0.05,
-      "close_date": "2026-05-26 10:24:06.914000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "ADA/KRW",
-      "profit_pct": 0.04,
-      "close_date": "2026-05-26 10:28:46.322000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "BTC/KRW",
-      "profit_pct": 0.09,
-      "close_date": "2026-05-26 10:37:48.043000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "XRP/KRW",
-      "profit_pct": -0.04,
-      "close_date": "2026-05-26 10:39:58.047000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "ETH/KRW",
-      "profit_pct": -0.02,
-      "close_date": "2026-05-26 21:05:38.134000",
-      "exit_reason": "trailing_stop_loss"
-    }
-  ],
+  "closed_trades_today": [],
   "total_profit_pct": -0.27,
   "win_rate": 18.8,
   "total_trades": 16,
