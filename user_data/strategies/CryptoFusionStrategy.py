@@ -161,13 +161,18 @@ class CryptoFusionStrategy(IStrategy):
              "only_per_pair": False},
         ]
 
-    minimal_roi = {"0": 0.015, "5": 0.01, "10": 0.007, "15": 0.005, "30": 0.004, "60": 0.003}
+    # ROI 첫 단계 0.015 → 0.02 (winner 키울 여유 확보, 2026-05-28 튜닝).
+    # 5분 이상 보유 시점 ROI는 그대로 유지 — 시간이 지나면 빠르게 익절.
+    minimal_roi = {"0": 0.02, "5": 0.01, "10": 0.007, "15": 0.005, "30": 0.004, "60": 0.003}
     stoploss = -0.015
     use_custom_stoploss = True
     trailing_stop = False
 
     # ---- Hyperopt parameters ----
-    buy_fusion_threshold = DecimalParameter(0.45, 0.60, default=0.50,
+    # buy_fusion default 0.50 → 0.45 (2026-05-28 튜닝): cold-start 진입 빈도
+    # 2~3배 증가 목적. adaptive learning input 가속. fusion_strong은 0.62
+    # 유지하여 high-confidence 진입은 그대로 식별.
+    buy_fusion_threshold = DecimalParameter(0.42, 0.55, default=0.45,
                                             space="buy", optimize=True)
     buy_fusion_strong = DecimalParameter(0.58, 0.75, default=0.62,
                                          space="buy", optimize=True)
@@ -567,20 +572,24 @@ class CryptoFusionStrategy(IStrategy):
         atr_mult = self.ATR_STOP_MULT_BOUNCE if is_bounce else self.ATR_STOP_MULT
         stop_price = trade.open_rate - (atr * atr_mult)
 
-        if current_profit > 0.015:
-            trail_price = current_rate - (atr * 0.4)
-            stop_price = max(stop_price, trail_price)
-        elif current_profit > 0.008:
+        # Trailing 완화 (2026-05-28): 16건 거래 데이터에서 모든 청산이
+        # trailing_stop_loss + best trade +0.09% → winner를 못 키움.
+        # 활성 임계 +1.5/0.8/0.5% → +2.5/1.5/0.8%로 미루고 trailing 거리도
+        # 약간 넓힘. 손실 한도는 ATR×1.2 initial SL이 그대로 통제.
+        if current_profit > 0.025:
             trail_price = current_rate - (atr * 0.5)
             stop_price = max(stop_price, trail_price)
-        elif current_profit > 0.005:
+        elif current_profit > 0.015:
             trail_price = current_rate - (atr * 0.6)
+            stop_price = max(stop_price, trail_price)
+        elif current_profit > 0.008:
+            trail_price = current_rate - (atr * 0.7)
             stop_price = max(stop_price, trail_price)
         elif current_rate > trade.open_rate + (atr * self.ATR_TRAIL_ACTIVATE):
             trail_price = current_rate - (atr * self.ATR_TRAIL_DISTANCE)
             stop_price = max(stop_price, trail_price)
 
-        breakeven_pct = self.BOUNCE_BREAKEVEN if is_bounce else 0.005
+        breakeven_pct = self.BOUNCE_BREAKEVEN if is_bounce else 0.008
         if current_profit > breakeven_pct:
             breakeven = trade.open_rate * 1.001
             stop_price = max(stop_price, breakeven)
