@@ -1,13 +1,11 @@
 name: Crypto AutoTrader
 
 on:
+  # 매시 fire — concurrency group이 동시 1개만 가동시키고 나머지 queue.
+  # cycle 종료 직후 queue된 cron이 자동 시작 → gap 거의 0.
+  # public repo라 Actions 분 무제한, 자주 fire해도 비용 0.
   schedule:
-    - cron: "0 0 * * *"
-    - cron: "0 4 * * *"
-    - cron: "0 8 * * *"
-    - cron: "0 12 * * *"
-    - cron: "0 16 * * *"
-    - cron: "0 20 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       live_trading:
@@ -29,7 +27,8 @@ env:
 jobs:
   trade:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # 280min = 4h40m — 어제 5h 1min run이 240min(4h) timeout 초과한 사례 반영
+    timeout-minutes: 280
 
     steps:
       - uses: actions/checkout@v4
@@ -92,7 +91,7 @@ jobs:
           FREQTRADE__TELEGRAM__CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FREQTRADE__DRY_RUN: ${{ steps.mode.outputs.live == 'true' && 'false' || 'true' }}
         run: |
-          timeout 13200 freqtrade trade \
+          timeout 16500 freqtrade trade \
             --config configs/config.json \
             --strategy CryptoFusionStrategy \
             --freqaimodel LightGBMRegressor \

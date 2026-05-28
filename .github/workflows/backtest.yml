@@ -1,8 +1,10 @@
 name: Weekly Backtest
 
 on:
+  # 매일 01:00 UTC (10:00 KST) — 시장 변화 신속 추적.
+  # public repo Actions 분 무제한, 백테스트는 60~90분/회 정도라 부담 X.
   schedule:
-    - cron: "0 1 * * 0"
+    - cron: "0 1 * * *"
   workflow_dispatch:
 
 env:

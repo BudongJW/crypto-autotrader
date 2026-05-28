@@ -5,8 +5,10 @@ name: Publish State
 # Provides near-realtime dashboard updates between autotrader cron cycles.
 
 on:
+  # GitHub Actions의 최소 권장 빈도 (5m). public repo라 Actions 분 무제한이라
+  # 자주 돌려도 비용 0. dashboard 신선도가 1/3로 개선.
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 concurrency:
