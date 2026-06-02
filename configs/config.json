@@ -108,11 +108,11 @@
         "listen_port": 8080,
         "verbosity": "error",
         "enable_openapi": false,
-        "jwt_secret_key": "",
-        "ws_token": "",
+        "jwt_secret_key": "PLACEHOLDER_DO_NOT_USE_ROTATE_VIA_ENV_BEFORE_ENABLING_API_SERVER",
+        "ws_token": "PLACEHOLDER_ROTATE_VIA_ENV_BEFORE_ENABLING_API_SERVER",
         "CORS_origins": [],
         "username": "freqtrader",
-        "password": ""
+        "password": "PLACEHOLDER_ROTATE_VIA_ENV_BEFORE_ENABLING_API_SERVER"
     },
 
     "freqai": {
