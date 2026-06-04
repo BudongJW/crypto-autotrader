@@ -25,13 +25,18 @@ jobs:
           python-version: "3.12"
 
       - name: Restore state
+        # paths MUST match autotrader.yml save step exactly — cache@v4 treats
+        # path mismatch as a miss even when restore-keys matches.
         uses: actions/cache/restore@v4
         with:
           path: |
             user_data/logs/
             user_data/tradesv3.sqlite
-          key: trader-state-
-          restore-keys: trader-state-
+            user_data/models/
+            user_data/freqaimodels/
+          key: trader-state-${{ github.run_id }}
+          restore-keys: |
+            trader-state-
 
       - name: Generate status report
         # publish_state.py = generate_status + strategy_state.json merge
@@ -41,11 +46,13 @@ jobs:
         run: python scripts/generate_journal.py
 
       - name: Commit journal to repo
+        # .gitignore 예외 추가 + -f 폴백 — gitignore 규칙 변경 누락 시에도 작동.
+        # set -e 하에서 git add 실패가 step을 죽이지 않게 || true 추가.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if [ -d user_data/logs/journal ] && [ -n "$(ls user_data/logs/journal/*.md 2>/dev/null)" ]; then
-            git add user_data/logs/journal/
+            git add -f user_data/logs/journal/ || true
             git diff --cached --quiet || git commit -m "journal: $(date -u +%Y-%m-%d) 일일 투자 일기"
             git push || echo "Push skipped (conflict or no changes)"
           fi
