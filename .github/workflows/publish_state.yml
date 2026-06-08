@@ -1,12 +1,21 @@
 name: Publish State
 
-# Polls the latest trader cache every 15 min, merges strategy_state.json +
-# SQLite trade history into docs/status.json, and deploys to GitHub Pages.
-# Provides near-realtime dashboard updates between autotrader cron cycles.
+# Polls the latest trader cache, merges strategy_state.json + SQLite trade
+# history into docs/status.json, and deploys to GitHub Pages.
+#
+# Trigger order (most to least reliable):
+#   1. repository_dispatch (external cron, e.g. cron-job.org)
+#      → 5-minute precision GUARANTEED, fires within seconds
+#   2. schedule cron */5 (GitHub native)
+#      → 65~273 min lag in practice (GitHub throttles short crons)
+#      → kept as fallback only
+#   3. workflow_dispatch (manual)
+#
+# See EXTERNAL_CRON_SETUP.md for cron-job.org configuration.
 
 on:
-  # GitHub Actions의 최소 권장 빈도 (5m). public repo라 Actions 분 무제한이라
-  # 자주 돌려도 비용 0. dashboard 신선도가 1/3로 개선.
+  repository_dispatch:
+    types: [publish_state]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
