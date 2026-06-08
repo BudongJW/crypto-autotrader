@@ -468,13 +468,19 @@ class CryptoFusionStrategy(IStrategy):
             ["enter_long", "enter_tag"],
         ] = (1, "fusion_strong")
 
+        # v3 (2026-06-08 KST 16:40): vol_above_ma + do_predict도 cold-start에서
+        # 면제. v2까지 시장 사실 가드 풀었음에도 거래 0건 → 이 두 조건이 약세장
+        # 진입의 마지막 차단 요인 확정. 거래량 위축 + FreqAI 불확실 모두 면제.
+        # 안전망: Kelly cap 1% (페어당 ₩10K), Initial SL ATR×1.2, Orderbook 가드 유지.
         normal = [
             dataframe["fusion_prob"] >= normal_threshold,
             dataframe["fusion_prob"] < self.buy_fusion_strong.value,
-            dataframe["do_predict"] == 1,
-            dataframe["vol_above_ma"] == 1,
             dataframe["enter_long"] != 1,
         ]
+        if not cold_start:
+            # 평시에만 vol_above_ma + do_predict 조건 적용
+            normal.insert(-1, dataframe["do_predict"] == 1)
+            normal.insert(-1, dataframe["vol_above_ma"] == 1)
         # 평시에만 Stage 2 SMA50 가드 적용 — cold-start 시 약세장에서 이 가드가
         # 거의 모든 진입을 차단하여 학습 데이터 누적 불가.
         if not cold_start:
