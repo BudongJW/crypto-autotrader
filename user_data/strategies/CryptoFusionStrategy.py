@@ -132,6 +132,17 @@ class CryptoFusionStrategy(IStrategy):
     # from crowding out other slots and limits per-trade variance.
     KELLY_CAP = 0.15
 
+    # ---- Cold-start 학습 가속 모드 (2026-06-08) ----
+    # Experience < THRESHOLD 동안:
+    #   - fusion_buy 임계 0.45 → 0.40 (진입 빈도 ↑)
+    #   - Stage 2 SEPA(close > SMA50) 가드 제거 (약세장에서 SMA50 위 조건 못 통과)
+    #   - Kelly cap 15% → 3% (페어당 stake 매우 작게)
+    # → 거래 1~2주 내 50건 누적 + 손실 한도 페어당 ~₩30K (시스템 -1% = -₩1.5K)
+    # 50건 도달 시 자동 정상 모드 복귀. fusion_strong은 고확신이라 가드 그대로.
+    COLD_START_THRESHOLD = 50       # experiences below this → 학습 모드
+    COLD_START_FUSION_BUY = 0.40    # 평시 0.45
+    COLD_START_KELLY_CAP = 0.03     # 평시 0.15 (3%)
+
     # ---- Bounce-specific risk parameters ----
     ATR_STOP_MULT_BOUNCE = 2.0
     SAFE_DIP_MAX = 0.08
@@ -212,6 +223,8 @@ class CryptoFusionStrategy(IStrategy):
         self._freqai_warn_last: dict[str, datetime] = {}
         self._recent_decisions: list[dict] = []
         self._btc_bearish_cache: tuple[str, int] | None = None
+        # Cold-start: 봇 첫 시작 시 True. heartbeat에서 experiences count 보고 갱신.
+        self._cold_start_active: bool = True
 
         self._freqai_train_count: int = 0
 
@@ -429,6 +442,14 @@ class CryptoFusionStrategy(IStrategy):
     # ENTRY / EXIT
     # =========================================================================
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # Cold-start 모드 분기 — experience < 50건 동안 진입 임계 + Stage 2
+        # SEPA 완화. fusion_strong 경로는 *고확신* 진입이라 그대로 둠.
+        cold_start = bool(self._cold_start_active)
+        normal_threshold = (
+            self.COLD_START_FUSION_BUY if cold_start
+            else float(self.buy_fusion_threshold.value)
+        )
+
         strong = [
             dataframe["fusion_prob"] >= self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
@@ -441,13 +462,17 @@ class CryptoFusionStrategy(IStrategy):
         ] = (1, "fusion_strong")
 
         normal = [
-            dataframe["fusion_prob"] >= self.buy_fusion_threshold.value,
+            dataframe["fusion_prob"] >= normal_threshold,
             dataframe["fusion_prob"] < self.buy_fusion_strong.value,
             dataframe["do_predict"] == 1,
             dataframe["vol_above_ma"] == 1,
-            dataframe["close"] > dataframe["sma_50"],
             dataframe["enter_long"] != 1,
         ]
+        # 평시에만 Stage 2 SMA50 가드 적용 — cold-start 시 약세장에서 이 가드가
+        # 거의 모든 진입을 차단하여 학습 데이터 누적 불가.
+        if not cold_start:
+            normal.insert(-1, dataframe["close"] > dataframe["sma_50"])
+
         dataframe.loc[
             reduce(lambda x, y: x & y, normal),
             ["enter_long", "enter_tag"],
@@ -728,6 +753,11 @@ class CryptoFusionStrategy(IStrategy):
         except Exception:  # noqa: BLE001
             bankroll = None
 
+        # Cold-start 시 페어당 stake를 3%로 축소 — 손실 한도 통제하며 학습 데이터 누적
+        effective_cap = (
+            self.COLD_START_KELLY_CAP if self._cold_start_active
+            else self.KELLY_CAP
+        )
         stake = kelly_stake(
             proposed_stake=float(proposed_stake),
             win_rate=stats.get("win_rate"),
@@ -738,7 +768,7 @@ class CryptoFusionStrategy(IStrategy):
             min_records_for_kelly=self.KELLY_MIN_RECORDS,
             record_count=record_count,
             kelly_scale=self.KELLY_SCALE,
-            kelly_cap=self.KELLY_CAP,
+            kelly_cap=effective_cap,
         )
 
         # Van Tharp SQN gate: reduce sizing when system quality is poor.
@@ -1365,7 +1395,7 @@ class CryptoFusionStrategy(IStrategy):
         except Exception as e:  # noqa: BLE001
             ob_status = f"err:{type(e).__name__}"
 
-        # Experience count for Kelly readiness
+        # Experience count for Kelly readiness — also drives cold-start gate
         exp_count = 0
         try:
             exp_count = len(load_experiences(
@@ -1374,6 +1404,8 @@ class CryptoFusionStrategy(IStrategy):
             ))
         except Exception:  # noqa: BLE001
             pass
+        # Cold-start active 갱신 (매 heartbeat = 1분/회)
+        self._cold_start_active = exp_count < self.COLD_START_THRESHOLD
 
         if fps:
             fp_min, fp_max = min(fps), max(fps)
@@ -1413,6 +1445,18 @@ class CryptoFusionStrategy(IStrategy):
                 "btc_total_tfs": len(self.BTC_MULTI_TFS),
                 "hmm_model_loaded": self._hmm_model is not None,
                 "experiences_count": exp_count,
+                "cold_start": {
+                    "active": self._cold_start_active,
+                    "threshold": self.COLD_START_THRESHOLD,
+                    "effective_buy_fusion": (
+                        self.COLD_START_FUSION_BUY if self._cold_start_active
+                        else float(self.buy_fusion_threshold.value)
+                    ),
+                    "effective_kelly_cap": (
+                        self.COLD_START_KELLY_CAP if self._cold_start_active
+                        else self.KELLY_CAP
+                    ),
+                },
                 "fees": {
                     "maker": self._maker_fee,
                     "taker": self._taker_fee,
