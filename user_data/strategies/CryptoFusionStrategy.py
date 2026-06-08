@@ -132,16 +132,23 @@ class CryptoFusionStrategy(IStrategy):
     # from crowding out other slots and limits per-trade variance.
     KELLY_CAP = 0.15
 
-    # ---- Cold-start 학습 가속 모드 (2026-06-08) ----
-    # Experience < THRESHOLD 동안:
-    #   - fusion_buy 임계 0.45 → 0.40 (진입 빈도 ↑)
-    #   - Stage 2 SEPA(close > SMA50) 가드 제거 (약세장에서 SMA50 위 조건 못 통과)
-    #   - Kelly cap 15% → 3% (페어당 stake 매우 작게)
-    # → 거래 1~2주 내 50건 누적 + 손실 한도 페어당 ~₩30K (시스템 -1% = -₩1.5K)
-    # 50건 도달 시 자동 정상 모드 복귀. fusion_strong은 고확신이라 가드 그대로.
-    COLD_START_THRESHOLD = 50       # experiences below this → 학습 모드
-    COLD_START_FUSION_BUY = 0.40    # 평시 0.45
-    COLD_START_KELLY_CAP = 0.03     # 평시 0.15 (3%)
+    # ---- Cold-start 학습 가속 모드 (2026-06-08, v2 2026-06-08 14:43 KST) ----
+    # Experience < THRESHOLD 동안 — chicken-egg 깨기:
+    #   - fusion_buy 임계 0.45 → 0.40
+    #   - Stage 2 SEPA(close > SMA50) 가드 제거
+    #   - **시장 사실 가드 완화** (v2): BTC turbulence 1.5×→2.5×,
+    #     ETH 1h trend SMA20×0.98→×0.95, BTC multi-TF 5/5→7/5 (사실상 비활성)
+    #   - Kelly cap 15% → **1%** (안전망 강화, 페어당 stake ~₩10K)
+    # → verify (2026-06-08): cold-start v1만으론 시그널 검출됐으나 confirm_trade_entry
+    #   가드에 막힘 (BTC turbulence/ETH 1h/BTC multi-TF 각 3건씩 차단)
+    # → v2: 시장 사실 가드 일부 완화 + stake 더 축소 = 학습 가속, 손실 통제
+    # 50건 도달 시 자동 평시 복귀.
+    COLD_START_THRESHOLD = 50
+    COLD_START_FUSION_BUY = 0.40
+    COLD_START_KELLY_CAP = 0.01                    # v1 0.03 → v2 0.01 (1%)
+    COLD_START_TURBULENCE_MULT = 2.5               # 평시 self.TURBULENCE_MULT(=1.5)
+    COLD_START_ETH_SMA_TOLERANCE = 0.95            # 평시 0.98 (더 큰 하락도 허용)
+    COLD_START_BTC_BEARISH_BLOCK = 7               # 5/5 → 7/5 (실질 비활성)
 
     # ---- Bounce-specific risk parameters ----
     ATR_STOP_MULT_BOUNCE = 2.0
@@ -792,6 +799,19 @@ class CryptoFusionStrategy(IStrategy):
     def confirm_trade_entry(self, pair, order_type, amount, rate,
                             time_in_force, current_time, entry_tag, side,
                             **kwargs) -> bool:
+        # Cold-start 시 시장 사실 가드 완화 (학습 데이터 누적 목적, stake 1% 안전망)
+        cold = bool(self._cold_start_active)
+        turbulence_mult = (
+            self.COLD_START_TURBULENCE_MULT if cold else self.TURBULENCE_MULT
+        )
+        eth_sma_tol = (
+            self.COLD_START_ETH_SMA_TOLERANCE if cold else 0.98
+        )
+        btc_bearish_block = (
+            self.COLD_START_BTC_BEARISH_BLOCK if cold
+            else self.BTC_BEARISH_BLOCK_THRESHOLD
+        )
+
         if pair != "BTC/KRW":
             # Use raw OHLCV so this guard works regardless of whether BTC is
             # in the trading whitelist (only informative_pairs membership needed).
@@ -800,7 +820,7 @@ class CryptoFusionStrategy(IStrategy):
                 btc_ret = btc_df["close"].pct_change()
                 recent_vol = btc_ret.tail(12).std()
                 long_vol = btc_ret.tail(288).std()
-                if long_vol > 0 and recent_vol / long_vol > self.TURBULENCE_MULT:
+                if long_vol > 0 and recent_vol / long_vol > turbulence_mult:
                     ratio = recent_vol / long_vol
                     logger.info("BTC turbulence detected (%.2f), blocking %s",
                                 ratio, pair)
@@ -823,7 +843,7 @@ class CryptoFusionStrategy(IStrategy):
             eth_df = self.dp.get_pair_dataframe("ETH/KRW", "1h")
             if eth_df is not None and len(eth_df) > 20:
                 sma20 = eth_df["close"].rolling(20).mean().iloc[-1]
-                if eth_df["close"].iloc[-1] < sma20 * 0.98:
+                if eth_df["close"].iloc[-1] < sma20 * eth_sma_tol:
                     logger.info("ETH 1h downtrend, blocking alt entry %s", pair)
                     self._record_decision("blocked", pair,
                                           reason="eth_downtrend")
@@ -836,7 +856,7 @@ class CryptoFusionStrategy(IStrategy):
         # even in bearish conditions (haguri-peng pattern).
         if pair != "BTC/KRW" and entry_tag != "rsi_bounce":
             bearish = self._btc_bearish_tf_count()
-            if bearish >= self.BTC_BEARISH_BLOCK_THRESHOLD:
+            if bearish >= btc_bearish_block:
                 logger.info(
                     "BTC bearish on %d/%d TFs, blocking alt entry %s",
                     bearish, len(self.BTC_MULTI_TFS), pair,
@@ -1455,6 +1475,19 @@ class CryptoFusionStrategy(IStrategy):
                     "effective_kelly_cap": (
                         self.COLD_START_KELLY_CAP if self._cold_start_active
                         else self.KELLY_CAP
+                    ),
+                    "effective_turbulence_mult": (
+                        self.COLD_START_TURBULENCE_MULT if self._cold_start_active
+                        else self.TURBULENCE_MULT
+                    ),
+                    "effective_eth_sma_tol": (
+                        self.COLD_START_ETH_SMA_TOLERANCE
+                        if self._cold_start_active else 0.98
+                    ),
+                    "effective_btc_bearish_block": (
+                        self.COLD_START_BTC_BEARISH_BLOCK
+                        if self._cold_start_active
+                        else self.BTC_BEARISH_BLOCK_THRESHOLD
                     ),
                 },
                 "fees": {
