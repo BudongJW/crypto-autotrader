@@ -383,6 +383,21 @@ class CryptoFusionStrategy(IStrategy):
             & (dataframe["sma_150"] > dataframe["sma_200"])
         ).astype(int)
 
+        # ---- Scalping indicators (단타용, 2026-06-08) ----
+        # 짧은 EMA cross + intraday VWAP + 거래량 spike — *5m momentum* 시점 진입.
+        # 봇의 장기 추세 정렬 (SEPA) 정책과 정반대 철학 — 단기 noise 활용.
+        dataframe["ema_9"] = ta.EMA(dataframe, timeperiod=9)
+        dataframe["ema_21"] = ta.EMA(dataframe, timeperiod=21)
+        # Rolling 1h VWAP (12 × 5m = 1h)
+        typical_p = (dataframe["high"] + dataframe["low"] + dataframe["close"]) / 3
+        cum_tpv = (typical_p * dataframe["volume"]).rolling(12).sum()
+        cum_v = dataframe["volume"].rolling(12).sum().replace(0, np.nan)
+        dataframe["vwap_1h"] = cum_tpv / cum_v
+        # 단타 거래량 spike — 1.2× 20MA (정상 대비 약간 큼)
+        dataframe["vol_spike_scalp"] = (
+            dataframe["volume"] > dataframe["volume"].rolling(20).mean() * 1.2
+        ).astype(int)
+
         # Safe-dip: NFI-style drop protection — block bounce if already crashed
         high_max_6h = dataframe["high"].rolling(72).max()
         dataframe["safe_dip"] = (
@@ -534,6 +549,23 @@ class CryptoFusionStrategy(IStrategy):
             ["enter_long", "enter_tag"],
         ] = (1, "rsi_bounce")
 
+        # ---- Quick Scalp 경로 (단타 전용, 2026-06-08) ----
+        # 5m momentum scalping — *장기 추세 follower* 정책과 정반대.
+        # 짧은 익절 + tight SL + 작은 stake로 학습 데이터 누적 + 수익 시도.
+        # BTC 가드 면제 (confirm_trade_entry에서 처리). Cold-start 무관 (영구).
+        quick_scalp = [
+            dataframe["ema_9"] > dataframe["ema_21"],         # 5m 단기 momentum 상승
+            dataframe["close"] > dataframe["vwap_1h"],        # intraday 강세
+            dataframe["rsi_14"] >= 30,
+            dataframe["rsi_14"] <= 55,                        # oversold 반등 시작 영역
+            dataframe["vol_spike_scalp"] == 1,                # 거래량 1.2× spike
+            dataframe["enter_long"] != 1,
+        ]
+        dataframe.loc[
+            reduce(lambda x, y: x & y, quick_scalp),
+            ["enter_long", "enter_tag"],
+        ] = (1, "quick_scalp")
+
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -576,6 +608,19 @@ class CryptoFusionStrategy(IStrategy):
         fusion_now = float(last.get("fusion_prob", 0.5))
         tag = getattr(trade, "enter_tag", "") or ""
 
+        # quick_scalp 단타 청산 — 짧은 ROI ladder. 매우 빠른 익절.
+        if tag == "quick_scalp":
+            trade_dur_min = (current_time - trade.open_date_utc).total_seconds() / 60
+            if current_profit >= 0.010:
+                return "scalp_roi_1pct"
+            if trade_dur_min >= 5 and current_profit >= 0.005:
+                return "scalp_roi_0.5pct"
+            if trade_dur_min >= 15 and current_profit >= 0.003:
+                return "scalp_roi_0.3pct"
+            if trade_dur_min >= 30 and current_profit >= 0.0:
+                return "scalp_roi_breakeven"
+            return None  # 단타라 다른 청산 로직 건너뜀
+
         if current_profit >= self.QUICK_EXIT_MIN_PROFIT and \
            tag in ("fusion_strong", "fusion_buy"):
             if tag == "fusion_strong":
@@ -607,6 +652,12 @@ class CryptoFusionStrategy(IStrategy):
 
         entry_tag = getattr(trade, 'enter_tag', '') or ''
         is_bounce = entry_tag == "rsi_bounce"
+        is_scalp = entry_tag == "quick_scalp"
+
+        # quick_scalp: -0.8% tight SL, trailing 없음 (단순)
+        if is_scalp:
+            return -0.008
+
         atr_mult = self.ATR_STOP_MULT_BOUNCE if is_bounce else self.ATR_STOP_MULT
         stop_price = trade.open_rate - (atr * atr_mult)
 
@@ -736,6 +787,19 @@ class CryptoFusionStrategy(IStrategy):
         if not pair:
             return proposed_stake
 
+        # quick_scalp: 고정 0.5% per trade (페어당 ~₩5K). Kelly/SQN/bear scaling 무관.
+        # 단타라 빠른 회전 위해 작고 일정한 stake. 손실 한도 ~-0.8% × 0.5% = -₩40.
+        if entry_tag == "quick_scalp":
+            try:
+                bankroll = float(self.wallets.get_total_stake_amount())
+                stake = bankroll * 0.005
+            except Exception:  # noqa: BLE001
+                stake = float(proposed_stake) * 0.05  # fallback: proposed × 5%
+            stake = min(stake, max_stake)
+            if min_stake is not None:
+                stake = max(stake, min_stake)
+            return stake
+
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         if dataframe is None or dataframe.empty:
             return proposed_stake
@@ -818,7 +882,10 @@ class CryptoFusionStrategy(IStrategy):
             else self.BTC_BEARISH_BLOCK_THRESHOLD
         )
 
-        if pair != "BTC/KRW":
+        # quick_scalp: BTC 가드 면제 (5m 단타라 cross-pair 영향 무관)
+        is_scalp = entry_tag == "quick_scalp"
+
+        if pair != "BTC/KRW" and not is_scalp:
             # Use raw OHLCV so this guard works regardless of whether BTC is
             # in the trading whitelist (only informative_pairs membership needed).
             btc_df = self.dp.get_pair_dataframe("BTC/KRW", self.timeframe)
@@ -845,7 +912,7 @@ class CryptoFusionStrategy(IStrategy):
                                   cap=self.MAX_CORRELATED_POSITIONS)
             return False
 
-        if pair not in ("BTC/KRW", "ETH/KRW"):
+        if pair not in ("BTC/KRW", "ETH/KRW") and not is_scalp:
             eth_df = self.dp.get_pair_dataframe("ETH/KRW", "1h")
             if eth_df is not None and len(eth_df) > 20:
                 sma20 = eth_df["close"].rolling(20).mean().iloc[-1]
@@ -860,7 +927,7 @@ class CryptoFusionStrategy(IStrategy):
         # is exempt since blocking it would be self-referential.
         # rsi_bounce (mean-reversion) is also exempt — oversold bounces work
         # even in bearish conditions (haguri-peng pattern).
-        if pair != "BTC/KRW" and entry_tag != "rsi_bounce":
+        if pair != "BTC/KRW" and entry_tag not in ("rsi_bounce", "quick_scalp"):
             bearish = self._btc_bearish_tf_count()
             if bearish >= btc_bearish_block:
                 logger.info(
