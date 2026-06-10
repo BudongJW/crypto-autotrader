@@ -1,21 +1,8 @@
 {
-  "updated_at": "2026-06-09T23:30:03.845396+00:00",
+  "updated_at": "2026-06-10T01:32:37.393249+00:00",
   "mode": "dry_run",
   "open_trades": [],
-  "closed_trades_today": [
-    {
-      "pair": "SOL/KRW",
-      "profit_pct": -0.3,
-      "close_date": "2026-06-09 12:55:36.426000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "ETH/KRW",
-      "profit_pct": -1.05,
-      "close_date": "2026-06-09 22:51:53.008000",
-      "exit_reason": "stop_loss"
-    }
-  ],
+  "closed_trades_today": [],
   "total_profit_pct": -0.31,
   "win_rate": 16.7,
   "total_trades": 18,
