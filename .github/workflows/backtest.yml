@@ -49,17 +49,26 @@ jobs:
           STRATS="${{ github.event.inputs.strategies }}"
           DAYS="${DAYS:-30}"
           STRATS="${STRATS:-CryptoFusionStrategy CryptoFusionStrategyP1P2}"
-          echo "days=$DAYS"          >> "$GITHUB_OUTPUT"
-          echo "strategies=$STRATS"  >> "$GITHUB_OUTPUT"
-          echo "since=$(date -u -d "${DAYS} days ago" +%Y%m%d)" >> "$GITHUB_OUTPUT"
-          echo "Resolved: days=$DAYS strategies='$STRATS'"
+          # FreqAI 요구사항:
+          #  1) close-ended timerange (--timerange A-B 둘 다 명시)
+          #  2) train_period_days(=45) 만큼 백테스트 시작 전 추가 데이터 필요
+          # → 다운로드 = DAYS + 50, 백테스트 timerange = 최근 DAYS만.
+          DOWNLOAD_DAYS=$((DAYS + 50))
+          SINCE=$(date -u -d "${DAYS} days ago" +%Y%m%d)
+          UNTIL=$(date -u -d "1 day ago" +%Y%m%d)
+          echo "days=$DAYS"                   >> "$GITHUB_OUTPUT"
+          echo "download_days=$DOWNLOAD_DAYS" >> "$GITHUB_OUTPUT"
+          echo "strategies=$STRATS"           >> "$GITHUB_OUTPUT"
+          echo "since=$SINCE"                 >> "$GITHUB_OUTPUT"
+          echo "until=$UNTIL"                 >> "$GITHUB_OUTPUT"
+          echo "Resolved: backtest_days=$DAYS download_days=$DOWNLOAD_DAYS timerange=${SINCE}-${UNTIL} strategies='$STRATS'"
 
       - name: Download data
         run: |
           freqtrade download-data \
             --config configs/config-backtest.json \
             --timeframes 5m 15m 1h \
-            --days ${{ steps.cfg.outputs.days }}
+            --days ${{ steps.cfg.outputs.download_days }}
 
       - name: Run backtest — baseline + P1P2 (--strategy-list)
         run: |
@@ -67,7 +76,7 @@ jobs:
             --config configs/config-backtest.json \
             --strategy-list ${{ steps.cfg.outputs.strategies }} \
             --freqaimodel LightGBMRegressor \
-            --timerange "${{ steps.cfg.outputs.since }}-" \
+            --timerange "${{ steps.cfg.outputs.since }}-${{ steps.cfg.outputs.until }}" \
             --export trades \
             --cache none
 
