@@ -6,6 +6,15 @@ on:
   schedule:
     - cron: "0 1 * * *"
   workflow_dispatch:
+    inputs:
+      days:
+        description: "데이터 기간 (일). 30/60/90"
+        required: false
+        default: "30"
+      strategies:
+        description: "공백 구분 strategy 리스트 (default: 베이스 + P1P2)"
+        required: false
+        default: "CryptoFusionStrategy CryptoFusionStrategyP1P2"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -13,7 +22,7 @@ env:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
@@ -33,26 +42,50 @@ jobs:
           pip install -r requirements.txt
           pip install TA-Lib || echo "TA-Lib C binding skipped"
 
+      - name: Resolve inputs
+        id: cfg
+        run: |
+          DAYS="${{ github.event.inputs.days }}"
+          STRATS="${{ github.event.inputs.strategies }}"
+          DAYS="${DAYS:-30}"
+          STRATS="${STRATS:-CryptoFusionStrategy CryptoFusionStrategyP1P2}"
+          echo "days=$DAYS"          >> "$GITHUB_OUTPUT"
+          echo "strategies=$STRATS"  >> "$GITHUB_OUTPUT"
+          echo "since=$(date -u -d "${DAYS} days ago" +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "Resolved: days=$DAYS strategies='$STRATS'"
+
       - name: Download data
         run: |
           freqtrade download-data \
             --config configs/config-backtest.json \
             --timeframes 5m 15m 1h \
-            --days 90
+            --days ${{ steps.cfg.outputs.days }}
 
-      - name: Run backtest (with FreqAI)
+      - name: Run backtest — baseline + P1P2 (--strategy-list)
         run: |
           freqtrade backtesting \
             --config configs/config-backtest.json \
-            --strategy CryptoFusionStrategy \
+            --strategy-list ${{ steps.cfg.outputs.strategies }} \
             --freqaimodel LightGBMRegressor \
-            --timerange "$(date -d '3 months ago' +%Y%m%d)-" \
+            --timerange "${{ steps.cfg.outputs.since }}-" \
             --export trades \
-            || true
+            --cache none
+
+      - name: Compare summary
+        if: always()
+        run: |
+          python scripts/compare_backtest.py \
+            user_data/backtest_results/ \
+            > backtest_summary.md || true
+          echo "## Backtest summary" >> $GITHUB_STEP_SUMMARY
+          cat backtest_summary.md   >> $GITHUB_STEP_SUMMARY || true
 
       - name: Upload results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backtest-${{ github.run_number }}
-          path: user_data/backtest_results/
+          path: |
+            user_data/backtest_results/
+            backtest_summary.md
           retention-days: 30
