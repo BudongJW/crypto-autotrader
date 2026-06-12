@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-11T23:11:11.931539+00:00",
+  "updated_at": "2026-06-12T01:41:17.030983+00:00",
   "mode": "dry_run",
   "open_trades": [
     {
@@ -17,110 +17,7 @@
       "enter_tag": "quick_scalp"
     }
   ],
-  "closed_trades_today": [
-    {
-      "pair": "ADA/KRW",
-      "profit_pct": 0.06,
-      "close_date": "2026-06-11 00:13:33.478000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.11,
-      "close_date": "2026-06-11 03:38:29.483000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "XRP/KRW",
-      "profit_pct": -0.21,
-      "close_date": "2026-06-11 07:11:36.734000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "SOL/KRW",
-      "profit_pct": -0.4,
-      "close_date": "2026-06-11 07:56:40.473000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "ETH/KRW",
-      "profit_pct": 0.21,
-      "close_date": "2026-06-11 11:30:31.596000",
-      "exit_reason": "scalp_roi_breakeven"
-    },
-    {
-      "pair": "LINK/KRW",
-      "profit_pct": 0.16,
-      "close_date": "2026-06-11 11:51:37.469000",
-      "exit_reason": "scalp_roi_breakeven"
-    },
-    {
-      "pair": "SOL/KRW",
-      "profit_pct": -0.1,
-      "close_date": "2026-06-11 11:23:23.049000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": 0.01,
-      "close_date": "2026-06-11 11:51:34.323000",
-      "exit_reason": "scalp_roi_breakeven"
-    },
-    {
-      "pair": "ADA/KRW",
-      "profit_pct": -0.02,
-      "close_date": "2026-06-11 12:01:08.671000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.41,
-      "close_date": "2026-06-11 12:35:08.935000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "SOL/KRW",
-      "profit_pct": -0.23,
-      "close_date": "2026-06-11 14:32:11.577000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "DOT/KRW",
-      "profit_pct": 0.29,
-      "close_date": "2026-06-11 17:29:24.428000",
-      "exit_reason": "roi"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.4,
-      "close_date": "2026-06-11 17:25:11.152000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": 0.27,
-      "close_date": "2026-06-11 17:41:14.342000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.1,
-      "close_date": "2026-06-11 18:36:20.898000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "LINK/KRW",
-      "profit_pct": 0.41,
-      "close_date": "2026-06-11 19:32:40.251000",
-      "exit_reason": "roi"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": 0.13,
-      "close_date": "2026-06-11 21:22:51.131000",
-      "exit_reason": "trailing_stop_loss"
-    }
-  ],
+  "closed_trades_today": [],
   "total_profit_pct": -0.19,
   "win_rate": 30.6,
   "total_trades": 36,
