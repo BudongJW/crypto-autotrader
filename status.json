@@ -1,19 +1,26 @@
 {
-  "updated_at": "2026-06-14T06:55:15.477422+00:00",
+  "updated_at": "2026-06-14T09:39:53.155191+00:00",
   "mode": "dry_run",
   "open_trades": [
     {
-      "pair": "AVAX/KRW",
-      "stake": 4729.380150308853,
-      "open_rate": 10170.82177034,
-      "open_date": "2026-06-14 01:30:54.514654",
+      "pair": "LINK/KRW",
+      "stake": 4725.314142378418,
+      "open_rate": 12007.50860882,
+      "open_date": "2026-06-14 06:25:13.729007",
       "enter_tag": "quick_scalp"
     },
     {
-      "pair": "ADA/KRW",
-      "stake": 42554.0385516182,
-      "open_rate": 262.17023908,
-      "open_date": "2026-06-14 04:06:23.076281",
+      "pair": "SOL/KRW",
+      "stake": 4725.314066622696,
+      "open_rate": 103208.17543618,
+      "open_date": "2026-06-14 08:30:51.570191",
+      "enter_tag": "quick_scalp"
+    },
+    {
+      "pair": "BTC/KRW",
+      "stake": 2595.399020330841,
+      "open_rate": 97461472.78748932,
+      "open_date": "2026-06-14 09:35:38.449363",
       "enter_tag": "fusion_buy"
     }
   ],
@@ -43,6 +50,12 @@
       "exit_reason": "exit_fusion_weak"
     },
     {
+      "pair": "AVAX/KRW",
+      "profit_pct": -1.19,
+      "close_date": "2026-06-14 05:31:53.690000",
+      "exit_reason": "trailing_stop_loss"
+    },
+    {
       "pair": "XRP/KRW",
       "profit_pct": -0.18,
       "close_date": "2026-06-14 02:31:18.880000",
@@ -65,21 +78,33 @@
       "profit_pct": 0.02,
       "close_date": "2026-06-14 03:53:56.265000",
       "exit_reason": "scalp_roi_breakeven"
+    },
+    {
+      "pair": "ADA/KRW",
+      "profit_pct": -1.31,
+      "close_date": "2026-06-14 05:31:29.020000",
+      "exit_reason": "trailing_stop_loss"
+    },
+    {
+      "pair": "SHIB/KRW",
+      "profit_pct": -0.28,
+      "close_date": "2026-06-14 09:28:08.296000",
+      "exit_reason": "exit_fusion_weak"
     }
   ],
-  "total_profit_pct": -0.18,
-  "win_rate": 33.0,
-  "total_trades": 112,
-  "total_profit_krw": -4584.0,
+  "total_profit_pct": -0.2,
+  "win_rate": 32.2,
+  "total_trades": 115,
+  "total_profit_krw": -5210.0,
   "best_trade_pct": 0.64,
-  "worst_trade_pct": -1.28,
-  "max_drawdown_krw": 4585.0,
+  "worst_trade_pct": -1.31,
+  "max_drawdown_krw": 5210.0,
   "strategy_state": {
     "available": true,
-    "heartbeat_at": "2026-06-14T05:02:32.729150+00:00",
-    "btc_close": 97253000.0,
+    "heartbeat_at": "2026-06-14T09:39:22.200974+00:00",
+    "btc_close": 97491000.0,
     "btc_hmm_state": "bear",
-    "btc_bearish_tfs": 3,
+    "btc_bearish_tfs": 2,
     "btc_total_tfs": 5,
     "hmm_model_loaded": true,
     "experiences_count": 500,
@@ -105,7 +130,7 @@
       "breakout": 0.2,
       "btc_sentiment": 0.1,
       "regime": 0.15,
-      "bias": 0.09000000000000001
+      "bias": 0.1
     },
     "thresholds": {
       "buy_fusion": 0.45,
@@ -118,383 +143,392 @@
       "orderbook_max_spread": 0.005
     },
     "fusion_distribution": {
-      "min": 0.3819,
-      "mean": 0.4463,
-      "max": 0.5061,
+      "min": 0.39,
+      "mean": 0.4272,
+      "max": 0.5001,
       "n": 10
     },
     "per_pair": [
       {
+        "pair": "BTC/KRW",
+        "close": 97491000.0,
+        "fusion_prob": 0.5001,
+        "ta_score": -22.6,
+        "lgbm_prob": 0.4313,
+        "regime": "bear",
+        "hmm_confidence": 0.533,
+        "breakout_signal": 1,
+        "stage2": 0,
+        "rsi": 59.6,
+        "atr_ratio": 1.04
+      },
+      {
         "pair": "DOT/KRW",
         "close": 1464.0,
-        "fusion_prob": 0.5061,
-        "ta_score": 15.1,
-        "lgbm_prob": 0.4948,
+        "fusion_prob": 0.4587,
+        "ta_score": -6.2,
+        "lgbm_prob": 0.4723,
         "regime": "sideways",
-        "hmm_confidence": 0.531,
+        "hmm_confidence": 0.529,
         "breakout_signal": 0,
         "stage2": 0,
-        "rsi": 17.1,
-        "atr_ratio": 0.96
+        "rsi": 48.5,
+        "atr_ratio": 0.75
+      },
+      {
+        "pair": "AVAX/KRW",
+        "close": 10040.0,
+        "fusion_prob": 0.4579,
+        "ta_score": -1.9,
+        "lgbm_prob": 0.4528,
+        "regime": "sideways",
+        "hmm_confidence": 0.534,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 45.7,
+        "atr_ratio": 1.04
+      },
+      {
+        "pair": "ADA/KRW",
+        "close": 258.0,
+        "fusion_prob": 0.4261,
+        "ta_score": -2.2,
+        "lgbm_prob": 0.4804,
+        "regime": "bear",
+        "hmm_confidence": 0.533,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 43.0,
+        "atr_ratio": 0.92
+      },
+      {
+        "pair": "SOL/KRW",
+        "close": 103200.0,
+        "fusion_prob": 0.4256,
+        "ta_score": -18.9,
+        "lgbm_prob": 0.4505,
+        "regime": "sideways",
+        "hmm_confidence": 0.534,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 53.5,
+        "atr_ratio": 0.99
+      },
+      {
+        "pair": "LINK/KRW",
+        "close": 11950.0,
+        "fusion_prob": 0.4149,
+        "ta_score": -8.1,
+        "lgbm_prob": 0.4793,
+        "regime": "bear",
+        "hmm_confidence": 0.533,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 48.1,
+        "atr_ratio": 1.12
+      },
+      {
+        "pair": "SHIB/KRW",
+        "close": 0.00755,
+        "fusion_prob": 0.4086,
+        "ta_score": -5.1,
+        "lgbm_prob": 0.4524,
+        "regime": "bear",
+        "hmm_confidence": 0.533,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 45.5,
+        "atr_ratio": 0.85
+      },
+      {
+        "pair": "XRP/KRW",
+        "close": 1732.0,
+        "fusion_prob": 0.3972,
+        "ta_score": -14.0,
+        "lgbm_prob": 0.4634,
+        "regime": "bear",
+        "hmm_confidence": 0.533,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 51.7,
+        "atr_ratio": 1.01
       },
       {
         "pair": "DOGE/KRW",
         "close": 132.0,
-        "fusion_prob": 0.4985,
-        "ta_score": -1.9,
-        "lgbm_prob": 0.6494,
-        "regime": "bear",
-        "hmm_confidence": 0.527,
+        "fusion_prob": 0.3931,
+        "ta_score": -4.9,
+        "lgbm_prob": 0.3252,
+        "regime": "sideways",
+        "hmm_confidence": 0.534,
         "breakout_signal": 0,
         "stage2": 0,
-        "rsi": 45.0,
-        "atr_ratio": 1.02
-      },
-      {
-        "pair": "LINK/KRW",
-        "close": 11960.0,
-        "fusion_prob": 0.498,
-        "ta_score": -1.7,
-        "lgbm_prob": 0.6477,
-        "regime": "bear",
-        "hmm_confidence": 0.527,
-        "breakout_signal": 0,
-        "stage2": 0,
-        "rsi": 27.0,
-        "atr_ratio": 1.06
+        "rsi": 51.9,
+        "atr_ratio": 1.04
       },
       {
         "pair": "ETH/KRW",
-        "close": 2536000.0,
-        "fusion_prob": 0.4426,
-        "ta_score": 1.2,
-        "lgbm_prob": 0.5167,
+        "close": 2531000.0,
+        "fusion_prob": 0.39,
+        "ta_score": -23.6,
+        "lgbm_prob": 0.4863,
         "regime": "bear",
-        "hmm_confidence": 0.527,
+        "hmm_confidence": 0.533,
         "breakout_signal": 0,
         "stage2": 0,
-        "rsi": 34.8,
-        "atr_ratio": 0.96
-      },
-      {
-        "pair": "BTC/KRW",
-        "close": 97253000.0,
-        "fusion_prob": 0.441,
-        "ta_score": 5.6,
-        "lgbm_prob": 0.4947,
-        "regime": "bear",
-        "hmm_confidence": 0.527,
-        "breakout_signal": 0,
-        "stage2": 0,
-        "rsi": 22.3,
-        "atr_ratio": 0.95
-      },
-      {
-        "pair": "SOL/KRW",
-        "close": 103600.0,
-        "fusion_prob": 0.4376,
-        "ta_score": 1.3,
-        "lgbm_prob": 0.5047,
-        "regime": "bear",
-        "hmm_confidence": 0.527,
-        "breakout_signal": 0,
-        "stage2": 0,
-        "rsi": 34.2,
-        "atr_ratio": 0.97
-      },
-      {
-        "pair": "AVAX/KRW",
-        "close": 10080.0,
-        "fusion_prob": 0.4266,
-        "ta_score": -2.9,
-        "lgbm_prob": 0.4976,
-        "regime": "bear",
-        "hmm_confidence": 0.527,
-        "breakout_signal": 0,
-        "stage2": 0,
-        "rsi": 27.1,
-        "atr_ratio": 0.92
-      },
-      {
-        "pair": "XRP/KRW",
-        "close": 1735.0,
-        "fusion_prob": 0.4179,
-        "ta_score": 1.8,
-        "lgbm_prob": 0.4581,
-        "regime": "bear",
-        "hmm_confidence": 0.527,
-        "breakout_signal": 0,
-        "stage2": 0,
-        "rsi": 36.6,
-        "atr_ratio": 1.03
-      },
-      {
-        "pair": "ADA/KRW",
-        "close": 260.0,
-        "fusion_prob": 0.4125,
-        "ta_score": -11.6,
-        "lgbm_prob": 0.5015,
-        "regime": "bear",
-        "hmm_confidence": 0.527,
-        "breakout_signal": 0,
-        "stage2": 0,
-        "rsi": 43.0,
-        "atr_ratio": 1.09
-      },
-      {
-        "pair": "SHIB/KRW",
-        "close": 0.00756,
-        "fusion_prob": 0.3819,
-        "ta_score": -13.5,
-        "lgbm_prob": 0.4387,
-        "regime": "bear",
-        "hmm_confidence": 0.527,
-        "breakout_signal": 0,
-        "stage2": 0,
-        "rsi": 38.0,
-        "atr_ratio": 1.06
+        "rsi": 47.9,
+        "atr_ratio": 1.0
       }
     ],
     "recent_decisions": [
       {
-        "ts": "2026-06-14T05:01:18.622958+00:00",
+        "ts": "2026-06-14T08:48:36.029626+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:18.770674+00:00",
+        "ts": "2026-06-14T08:48:41.024683+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:23.619686+00:00",
+        "ts": "2026-06-14T08:48:46.024143+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:23.767401+00:00",
+        "ts": "2026-06-14T08:48:51.031331+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:28.773321+00:00",
+        "ts": "2026-06-14T08:48:56.034302+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:28.922304+00:00",
+        "ts": "2026-06-14T08:49:01.025602+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:34.013776+00:00",
+        "ts": "2026-06-14T08:49:06.036686+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:34.162877+00:00",
+        "ts": "2026-06-14T08:49:11.028474+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:38.300910+00:00",
+        "ts": "2026-06-14T08:49:16.029690+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:38.452316+00:00",
+        "ts": "2026-06-14T08:49:21.213136+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:43.303621+00:00",
+        "ts": "2026-06-14T08:49:26.024930+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:43.451740+00:00",
+        "ts": "2026-06-14T08:49:31.026742+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:48.306632+00:00",
+        "ts": "2026-06-14T08:49:36.023908+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:48.457863+00:00",
+        "ts": "2026-06-14T08:49:41.025404+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:53.306233+00:00",
+        "ts": "2026-06-14T08:49:46.030950+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:53.454497+00:00",
+        "ts": "2026-06-14T08:49:51.031520+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:58.303050+00:00",
+        "ts": "2026-06-14T08:49:56.028863+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:01:58.452243+00:00",
+        "ts": "2026-06-14T08:50:03.108464+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:02:03.312089+00:00",
+        "ts": "2026-06-14T08:50:11.862078+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:02:03.461948+00:00",
+        "ts": "2026-06-14T08:50:15.296896+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:02:08.317532+00:00",
+        "ts": "2026-06-14T08:50:20.318526+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "scalp_roi_breakeven",
+        "rate": 0.00758,
+        "pnl_pct": 0.22
       },
       {
-        "ts": "2026-06-14T05:02:08.464659+00:00",
-        "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "ts": "2026-06-14T09:01:46.340971+00:00",
+        "kind": "passed",
+        "pair": "DOT/KRW",
+        "tag": "quick_scalp",
+        "rate": 1463.6967914563427,
+        "fusion": 0.462,
+        "ta": 7.9,
+        "hmm": "bear"
       },
       {
-        "ts": "2026-06-14T05:02:13.309753+00:00",
+        "ts": "2026-06-14T09:15:15.403441+00:00",
         "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "pair": "SHIB/KRW",
+        "reason": "exit_fusion_weak",
+        "rate": 0.00756,
+        "pnl_pct": -0.05
       },
       {
-        "ts": "2026-06-14T05:02:13.455548+00:00",
+        "ts": "2026-06-14T09:20:13.141140+00:00",
         "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "pair": "SHIB/KRW",
+        "reason": "exit_fusion_weak",
+        "rate": 0.00755,
+        "pnl_pct": -0.18
       },
       {
-        "ts": "2026-06-14T05:02:18.472812+00:00",
-        "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "ts": "2026-06-14T09:35:16.410098+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": 0.419,
+        "cum_imb": -0.737,
+        "spread": 0.00028
       },
       {
-        "ts": "2026-06-14T05:02:18.620355+00:00",
-        "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "ts": "2026-06-14T09:35:18.316343+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": 0.419,
+        "cum_imb": -0.746,
+        "spread": 0.00028
       },
       {
-        "ts": "2026-06-14T05:02:23.299507+00:00",
-        "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "ts": "2026-06-14T09:35:23.286928+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.518,
+        "cum_imb": -0.831,
+        "spread": 0.00028
       },
       {
-        "ts": "2026-06-14T05:02:23.445516+00:00",
-        "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "ts": "2026-06-14T09:35:28.296839+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.791,
+        "cum_imb": -0.904,
+        "spread": 0.00033
       },
       {
-        "ts": "2026-06-14T05:02:28.295503+00:00",
-        "kind": "exit",
-        "pair": "AVAX/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 10100.0,
-        "pnl_pct": -0.7
+        "ts": "2026-06-14T09:35:33.285213+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": 0.742,
+        "cum_imb": -0.807,
+        "spread": 0.00033
       },
       {
-        "ts": "2026-06-14T05:02:28.442941+00:00",
-        "kind": "exit",
-        "pair": "ADA/KRW",
-        "reason": "trailing_stop_loss",
-        "rate": 260.0,
-        "pnl_pct": -0.83
+        "ts": "2026-06-14T09:35:38.302611+00:00",
+        "kind": "passed",
+        "pair": "BTC/KRW",
+        "tag": "fusion_buy",
+        "rate": 97461472.78748932,
+        "fusion": 0.5,
+        "ta": -22.6,
+        "hmm": "bear"
       }
     ]
   }
