@@ -95,17 +95,31 @@ jobs:
       - name: Run backtest — baseline + variants (--strategy-list)
         run: |
           ARGS=()
+          CFG=configs/config-backtest.json
           if [ "${{ steps.cfg.outputs.freqai }}" = "true" ]; then
             ARGS+=( --freqaimodel LightGBMRegressor )
+          else
+            # FreqAI 끄려면 config.json의 freqai 섹션을 enabled=false로 덮어써야 한다.
+            # add_config_files로 상속받은 base config의 freqai 섹션이 우선이라
+            # 별도 override 파일을 동적으로 생성.
+            python -c "
+          import json, copy
+          with open('configs/config-backtest.json') as f: bt = json.load(f)
+          bt['freqai'] = {'enabled': False}
+          with open('configs/config-backtest-nofreqai.json', 'w') as f:
+              json.dump(bt, f, indent=2)
+          "
+            CFG=configs/config-backtest-nofreqai.json
+            echo "FreqAI disabled — using $CFG"
           fi
           PAIRS_OVR="${{ steps.cfg.outputs.pairs }}"
           if [ -n "$PAIRS_OVR" ]; then
             # shellcheck disable=SC2086
             ARGS+=( --pairs $PAIRS_OVR )
           fi
-          echo "Extra args: ${ARGS[*]}"
+          echo "Config: $CFG  Extra args: ${ARGS[*]}"
           freqtrade backtesting \
-            --config configs/config-backtest.json \
+            --config "$CFG" \
             --strategy-list ${{ steps.cfg.outputs.strategies }} \
             --timerange "${{ steps.cfg.outputs.since }}-${{ steps.cfg.outputs.until }}" \
             --export trades \
