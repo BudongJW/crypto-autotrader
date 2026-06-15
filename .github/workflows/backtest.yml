@@ -161,6 +161,10 @@ jobs:
               MATCH=1
               echo "- **Import 에러**: strategy 모듈 import 실패. P1P2 같은 변형 strategy의 상속 import 경로 확인."
             fi
+            if [ -f "$LOG" ] && grep -q "no attribute 'freqai_info'" "$LOG"; then
+              MATCH=1
+              echo "- **freqai_info 없음**: FreqAI를 껐는데 strategy가 \`self.freqai_info\`에 접근. strategy 코드가 FreqAI on 상태를 가정함. → FreqAI=true로 돌리거나 strategy의 freqai_info 접근 부분에 fallback 추가."
+            fi
             if [ -f "$LOG" ] && grep -qE "AttributeError|KeyError" "$LOG"; then
               MATCH=1
               echo "- **속성/키 에러**: strategy 코드의 dataframe 컬럼 또는 trade 속성 누락. 자세한 traceback ↓"
