@@ -94,6 +94,7 @@ jobs:
 
       - name: Run backtest — baseline + variants (--strategy-list)
         run: |
+          set -o pipefail
           ARGS=()
           CFG=configs/config-backtest.json
           if [ "${{ steps.cfg.outputs.freqai }}" = "true" ]; then
@@ -118,13 +119,70 @@ jobs:
             ARGS+=( --pairs $PAIRS_OVR )
           fi
           echo "Config: $CFG  Extra args: ${ARGS[*]}"
+          mkdir -p /tmp/bt-logs
           freqtrade backtesting \
             --config "$CFG" \
             --strategy-list ${{ steps.cfg.outputs.strategies }} \
             --timerange "${{ steps.cfg.outputs.since }}-${{ steps.cfg.outputs.until }}" \
             --export trades \
             --cache none \
-            "${ARGS[@]}"
+            "${ARGS[@]}" 2>&1 | tee /tmp/bt-logs/run.log
+
+      - name: Self-diagnose on failure
+        if: failure()
+        run: |
+          LOG=/tmp/bt-logs/run.log
+          OUT=diagnostic.md
+          {
+            echo "## ❌ Backtest failure — 자동 진단"
+            echo ""
+            echo "**Run**: ${{ github.run_id }}  **Config**: freqai=${{ steps.cfg.outputs.freqai }} timerange=${{ steps.cfg.outputs.since }}-${{ steps.cfg.outputs.until }}"
+            echo ""
+            echo "### 알려진 패턴 매칭"
+            echo ""
+            MATCH=0
+            if [ -f "$LOG" ] && grep -q "open ended timeranges" "$LOG"; then
+              MATCH=1
+              echo "- **FreqAI open-ended timerange**: \`--timerange A-B\` 둘 다 명시 필요. workflow의 since/until 값 확인."
+            fi
+            if [ -f "$LOG" ] && grep -q "No freqaimodel set" "$LOG"; then
+              MATCH=1
+              echo "- **No freqaimodel set**: config에 freqai 섹션 있는데 \`--freqaimodel\` 미전달. freqai=false 모드면 config의 freqai.enabled=false override 확인."
+            fi
+            if [ -f "$LOG" ] && grep -q "No data left after adjusting" "$LOG"; then
+              MATCH=1
+              echo "- **Startup candle 데이터 부족**: download_days 증가 (현재 ${{ steps.cfg.outputs.download_days }}) 또는 timerange 단축 (현재 ${{ steps.cfg.outputs.days }}일)."
+            fi
+            if [ -f "$LOG" ] && grep -q "Could not fetch historical candle" "$LOG"; then
+              MATCH=1
+              echo "- **거래소 OHLCV fetch 실패**: Upbit rate limit 또는 페어 잘못. pair 줄이거나 retry."
+            fi
+            if [ -f "$LOG" ] && grep -qE "ImportError|ModuleNotFoundError" "$LOG"; then
+              MATCH=1
+              echo "- **Import 에러**: strategy 모듈 import 실패. P1P2 같은 변형 strategy의 상속 import 경로 확인."
+            fi
+            if [ -f "$LOG" ] && grep -qE "AttributeError|KeyError" "$LOG"; then
+              MATCH=1
+              echo "- **속성/키 에러**: strategy 코드의 dataframe 컬럼 또는 trade 속성 누락. 자세한 traceback ↓"
+            fi
+            if [ "$MATCH" = "0" ]; then
+              echo "- (알려진 패턴 매칭 안 됨. 로그 직접 확인 필요)"
+            fi
+            echo ""
+            echo "### 마지막 20줄 (raw)"
+            echo ""
+            echo '```'
+            if [ -f "$LOG" ]; then tail -20 "$LOG"; else echo "(no log)"; fi
+            echo '```'
+            echo ""
+            echo "### 에러/traceback 추출"
+            echo ""
+            echo '```'
+            if [ -f "$LOG" ]; then grep -iE "ERROR|Traceback|Exception" "$LOG" | tail -20; else echo "(no log)"; fi
+            echo '```'
+          } > "$OUT"
+          cat "$OUT" >> "$GITHUB_STEP_SUMMARY"
+          cp "$OUT" backtest_summary.md  # artifact로 함께 업로드되게
 
       - name: Compare summary
         if: always()
