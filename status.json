@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-15T22:27:52.288046+00:00",
+  "updated_at": "2026-06-16T00:14:58.641892+00:00",
   "mode": "dry_run",
   "open_trades": [
     {
@@ -10,44 +10,7 @@
       "enter_tag": "quick_scalp"
     }
   ],
-  "closed_trades_today": [
-    {
-      "pair": "ADA/KRW",
-      "profit_pct": -0.16,
-      "close_date": "2026-06-15 04:19:36.272000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "SOL/KRW",
-      "profit_pct": -0.16,
-      "close_date": "2026-06-15 04:21:41.260000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.03,
-      "close_date": "2026-06-15 05:16:12.133000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "LINK/KRW",
-      "profit_pct": 0.15,
-      "close_date": "2026-06-15 06:18:12.212000",
-      "exit_reason": "scalp_roi_breakeven"
-    },
-    {
-      "pair": "ADA/KRW",
-      "profit_pct": -0.61,
-      "close_date": "2026-06-15 08:03:29.839000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "SOL/KRW",
-      "profit_pct": 0.08,
-      "close_date": "2026-06-15 08:34:06.646000",
-      "exit_reason": "scalp_roi_breakeven"
-    }
-  ],
+  "closed_trades_today": [],
   "total_profit_pct": -0.21,
   "win_rate": 32.3,
   "total_trades": 133,
