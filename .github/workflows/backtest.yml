@@ -23,6 +23,10 @@ on:
         description: "백테스트 페어 override (공백 구분, 빈값이면 config의 whitelist 사용)"
         required: false
         default: ""
+      timerange:
+        description: "명시적 구간 YYYYMMDD-YYYYMMDD (빈값이면 days 기준 trailing window). 특정 활성 구간 재현용."
+        required: false
+        default: ""
       timeout:
         description: "워크플로 timeout (분)"
         required: false
@@ -75,6 +79,22 @@ jobs:
 
           SINCE=$(date -u -d "${DAYS} days ago" +%Y%m%d)
           UNTIL=$(date -u -d "1 day ago" +%Y%m%d)
+
+          # 명시적 timerange override — 특정 활성 구간 재현 (deterministic A/B)
+          TIMERANGE="${{ github.event.inputs.timerange }}"
+          if [ -n "$TIMERANGE" ]; then
+            SINCE="${TIMERANGE%%-*}"
+            UNTIL="${TIMERANGE##*-}"
+            # download은 항상 오늘까지 받으므로, SINCE까지 거슬러 + train buffer 확보
+            SINCE_EPOCH=$(date -u -d "$SINCE" +%s)
+            NOW_EPOCH=$(date -u +%s)
+            SPAN_DAYS=$(( (NOW_EPOCH - SINCE_EPOCH) / 86400 ))
+            if [ "$FREQAI" = "true" ]; then
+              DOWNLOAD_DAYS=$((SPAN_DAYS + 50))
+            else
+              DOWNLOAD_DAYS=$((SPAN_DAYS + 10))
+            fi
+          fi
 
           echo "days=$DAYS"                   >> "$GITHUB_OUTPUT"
           echo "download_days=$DOWNLOAD_DAYS" >> "$GITHUB_OUTPUT"
