@@ -117,6 +117,11 @@ class CryptoFusionStrategy(IStrategy):
     HMM_SOURCE_PAIR = "BTC/KRW"
 
     EXPERIENCE_MAX_SIZE = 500
+    # v2: 실제 체결(order_filled) 시 1회·실현손익(수수료 포함)으로 기록.
+    # 구 experience.jsonl은 confirm_trade_exit 반복호출(거래당 수십회)로 승리만
+    # 과대기록되어 승률 97% 가짜 신호 → Kelly/cold_start/가중치 학습 오염. 파일명
+    # 변경으로 오염 로그를 폐기하고 학습을 깨끗이 재시작.
+    EXPERIENCE_FILE = "experience_v2.jsonl"
     FUSION_LEARN_INTERVAL_HOURS = 4
 
     # ---- Phase B: orderbook microstructure gate ----
@@ -811,7 +816,7 @@ class CryptoFusionStrategy(IStrategy):
         # records exist (cold start → behave like the old heuristic).
         try:
             recs = load_experiences(
-                self._logs_dir / "experience.jsonl",
+                self._logs_dir / self.EXPERIENCE_FILE,
                 max_records=self.EXPERIENCE_MAX_SIZE,
             )
         except Exception as e:  # noqa: BLE001
@@ -1492,7 +1497,7 @@ class CryptoFusionStrategy(IStrategy):
         exp_count = 0
         try:
             exp_count = len(load_experiences(
-                self._logs_dir / "experience.jsonl",
+                self._logs_dir / self.EXPERIENCE_FILE,
                 max_records=self.EXPERIENCE_MAX_SIZE,
             ))
         except Exception:  # noqa: BLE001
@@ -1637,10 +1642,9 @@ class CryptoFusionStrategy(IStrategy):
 
     def confirm_trade_exit(self, pair, trade, order_type, amount, rate,
                            time_in_force, exit_reason, current_time, **kwargs) -> bool:
-        try:
-            self._log_experience(trade, rate, exit_reason)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Failed to log experience: %s", e)
+        # 주의: 학습 experience 기록은 여기가 아니라 order_filled(실제 체결 1회)에서
+        # 한다. confirm_trade_exit은 limit 재호가로 거래당 수십회 호출되어, 여기서
+        # 기록하면 승리만 과대집계됨(구 버그). 여기선 대시보드 decision telemetry만.
         try:
             pnl_pct = ((float(rate) - float(trade.open_rate))
                        / float(trade.open_rate)) * 100
@@ -1651,6 +1655,26 @@ class CryptoFusionStrategy(IStrategy):
         except Exception as e:  # noqa: BLE001
             logger.debug("exit decision record failed: %s", e)
         return True
+
+    def order_filled(self, pair: str, trade: Trade, order, current_time,
+                     **kwargs) -> None:
+        """청산 주문이 실제 체결되어 거래가 완전히 닫힐 때 experience 1회 기록.
+
+        freqtrade의 fill 콜백 — 거래당 정확히 1회(최종 청산 체결). 실현손익은
+        _log_experience가 trade.close_profit(수수료 포함)에서 읽는다.
+        """
+        try:
+            # 거래가 닫힌 시점의 체결 = 청산 fill. 진입 fill은 is_open=True라 제외되고,
+            # 부분청산(position adjustment)도 최종 마감에서만 1회 잡힌다.
+            # ft_order_side 값(exit/sell)은 버전별로 달라 의존하지 않는다.
+            if not trade.is_open:
+                exit_rate = trade.close_rate or getattr(order, "safe_price", 0) \
+                    or trade.open_rate
+                self._log_experience(
+                    trade, float(exit_rate), trade.exit_reason or "",
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("order_filled experience log failed: %s", e)
 
     def _capture_signal_context(self, pair: str, at: datetime | None) -> dict:
         """
@@ -1686,8 +1710,13 @@ class CryptoFusionStrategy(IStrategy):
             return {}
 
     def _log_experience(self, trade: Trade, exit_rate: float, reason: str) -> None:
-        path = self._logs_dir / "experience.jsonl"
-        pnl_pct = ((exit_rate - trade.open_rate) / trade.open_rate) * 100
+        path = self._logs_dir / self.EXPERIENCE_FILE
+        # 실현손익 우선(체결 기반·수수료 포함). 거래 미마감 시에만 총가격변화 폴백.
+        close_profit = getattr(trade, "close_profit", None)
+        if close_profit is not None:
+            pnl_pct = float(close_profit) * 100
+        else:
+            pnl_pct = ((exit_rate - trade.open_rate) / trade.open_rate) * 100
 
         # Entry-time signal context: enables purged-CV replay of weight
         # candidates. Falls back to {} if open_date or dataframe is missing.
@@ -1732,7 +1761,7 @@ class CryptoFusionStrategy(IStrategy):
     VALIDATION_MIN_RECORDS = 30
 
     def _learn_fusion_weights(self) -> None:
-        path = self._logs_dir / "experience.jsonl"
+        path = self._logs_dir / self.EXPERIENCE_FILE
         experiences = load_experiences(path, max_records=self.EXPERIENCE_MAX_SIZE)
         if len(experiences) < 20:
             return
