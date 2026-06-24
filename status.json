@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-23T23:42:53.613476+00:00",
+  "updated_at": "2026-06-24T01:47:44.493497+00:00",
   "mode": "dry_run",
   "open_trades": [
     {
@@ -17,122 +17,7 @@
       "enter_tag": "fusion_buy"
     }
   ],
-  "closed_trades_today": [
-    {
-      "pair": "XRP/KRW",
-      "profit_pct": 0.03,
-      "close_date": "2026-06-23 01:01:25.839000",
-      "exit_reason": "scalp_roi_breakeven"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.96,
-      "close_date": "2026-06-23 01:51:05.625000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": 0.27,
-      "close_date": "2026-06-23 02:23:09.729000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": 0.36,
-      "close_date": "2026-06-23 12:02:12.645000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.7,
-      "close_date": "2026-06-23 12:41:33.719000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.28,
-      "close_date": "2026-06-23 13:00:37.523000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.18,
-      "close_date": "2026-06-23 13:20:34.230000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.13,
-      "close_date": "2026-06-23 13:40:53.864000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.84,
-      "close_date": "2026-06-23 14:23:08.163000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.51,
-      "close_date": "2026-06-23 14:28:30.164000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": 0.06,
-      "close_date": "2026-06-23 15:04:13.847000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.67,
-      "close_date": "2026-06-23 16:31:34.738000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.67,
-      "close_date": "2026-06-23 17:16:20.277000",
-      "exit_reason": "stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.91,
-      "close_date": "2026-06-23 17:11:34.845000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.3,
-      "close_date": "2026-06-23 18:06:09.128000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": 0.02,
-      "close_date": "2026-06-23 19:56:36.181000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.07,
-      "close_date": "2026-06-23 20:22:27.468000",
-      "exit_reason": "exit_fusion_weak"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -0.35,
-      "close_date": "2026-06-23 20:23:32.461000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "AVAX/KRW",
-      "profit_pct": -0.31,
-      "close_date": "2026-06-23 20:55:11.854000",
-      "exit_reason": "exit_fusion_weak"
-    }
-  ],
+  "closed_trades_today": [],
   "total_profit_pct": -0.23,
   "win_rate": 32.6,
   "total_trades": 356,
