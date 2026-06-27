@@ -1,15 +1,8 @@
 {
-  "updated_at": "2026-06-26T23:09:08.466771+00:00",
+  "updated_at": "2026-06-27T00:07:10.600891+00:00",
   "mode": "dry_run",
   "open_trades": [],
-  "closed_trades_today": [
-    {
-      "pair": "XRP/KRW",
-      "profit_pct": -0.03,
-      "close_date": "2026-06-26 00:09:56.606000",
-      "exit_reason": "exit_fusion_weak"
-    }
-  ],
+  "closed_trades_today": [],
   "total_profit_pct": -0.23,
   "win_rate": 31.7,
   "total_trades": 375,
