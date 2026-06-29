@@ -1,21 +1,8 @@
 {
-  "updated_at": "2026-06-28T22:57:15.190849+00:00",
+  "updated_at": "2026-06-29T00:17:27.129537+00:00",
   "mode": "dry_run",
   "open_trades": [],
-  "closed_trades_today": [
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -1.19,
-      "close_date": "2026-06-28 05:33:03.976000",
-      "exit_reason": "trailing_stop_loss"
-    },
-    {
-      "pair": "SHIB/KRW",
-      "profit_pct": -1.24,
-      "close_date": "2026-06-28 16:33:59.732000",
-      "exit_reason": "trailing_stop_loss"
-    }
-  ],
+  "closed_trades_today": [],
   "total_profit_pct": -0.23,
   "win_rate": 31.6,
   "total_trades": 377,
