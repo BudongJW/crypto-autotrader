@@ -93,7 +93,7 @@ jobs:
         run: |
           timeout 16500 freqtrade trade \
             --config configs/config.json \
-            --strategy CryptoFusionStrategyP3 \
+            --strategy CryptoFusionStrategyP6 \
             --freqaimodel LightGBMRegressor \
             --logfile user_data/logs/freqtrade.log \
             --db-url sqlite:///user_data/tradesv3.sqlite \
