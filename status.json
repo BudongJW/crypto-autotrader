@@ -1,12 +1,453 @@
 {
-  "updated_at": "2026-11-22T20:56:58.943371+00:00",
+  "updated_at": "2026-11-22T21:17:32.441180+00:00",
   "mode": "dry_run",
   "open_trades": [],
-  "closed_trades_today": [],
-  "total_profit_pct": 0.0,
-  "win_rate": 0.0,
-  "total_trades": 0,
+  "closed_trades_today": [
+    {
+      "pair": "BTC/KRW",
+      "profit_pct": -0.39,
+      "close_date": "2026-11-22 18:10:21.685000",
+      "exit_reason": "trailing_stop_loss"
+    },
+    {
+      "pair": "BTC/KRW",
+      "profit_pct": -0.03,
+      "close_date": "2026-11-22 19:02:46.931000",
+      "exit_reason": "trailing_stop_loss"
+    },
+    {
+      "pair": "BTC/KRW",
+      "profit_pct": -0.27,
+      "close_date": "2026-11-22 20:25:30.413000",
+      "exit_reason": "trailing_stop_loss"
+    },
+    {
+      "pair": "BTC/KRW",
+      "profit_pct": 0.46,
+      "close_date": "2026-11-22 21:07:27.534000",
+      "exit_reason": "trailing_stop_loss"
+    }
+  ],
+  "total_profit_pct": -0.06,
+  "win_rate": 25.0,
+  "total_trades": 4,
+  "total_profit_krw": -134.0,
+  "best_trade_pct": 0.46,
+  "worst_trade_pct": -0.39,
+  "max_drawdown_krw": 398.0,
   "strategy_state": {
-    "available": false
+    "available": true,
+    "heartbeat_at": "2026-11-22T21:16:45.253918+00:00",
+    "btc_close": 83130000.0,
+    "btc_hmm_state": "bear",
+    "btc_bearish_tfs": 1,
+    "btc_total_tfs": 5,
+    "hmm_model_loaded": true,
+    "experiences_count": 4,
+    "cold_start": {
+      "active": true,
+      "threshold": 50,
+      "effective_buy_fusion": 0.4,
+      "effective_kelly_cap": 0.01,
+      "effective_turbulence_mult": 2.5,
+      "effective_eth_sma_tol": 0.95,
+      "effective_btc_bearish_block": 7
+    },
+    "fees": {
+      "maker": 0.0005,
+      "taker": 0.0005,
+      "round_trip": 0.001,
+      "queried": false
+    },
+    "orderbook_status": "ok",
+    "fusion_weights": {
+      "ta_score": 0.25,
+      "lgbm_prob": 0.3,
+      "breakout": 0.2,
+      "btc_sentiment": 0.1,
+      "regime": 0.15,
+      "bias": -0.02
+    },
+    "thresholds": {
+      "buy_fusion": 0.45,
+      "buy_strong": 0.62,
+      "sell_fusion_exit": 0.38,
+      "sell_rsi_exit": 82,
+      "ta_fallback": 40,
+      "btc_bearish_block": 5,
+      "orderbook_min_imb": -0.7,
+      "orderbook_max_spread": 0.005
+    },
+    "fusion_distribution": {
+      "min": 0.2115,
+      "mean": 0.2629,
+      "max": 0.5257,
+      "n": 10
+    },
+    "per_pair": [
+      {
+        "pair": "BTC/KRW",
+        "close": 83130000.0,
+        "fusion_prob": 0.5257,
+        "ta_score": 16.8,
+        "lgbm_prob": 0.6792,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 58.2,
+        "atr_ratio": 0.82
+      },
+      {
+        "pair": "SOL/KRW",
+        "close": 95850.0,
+        "fusion_prob": 0.27,
+        "ta_score": 10.2,
+        "lgbm_prob": 0.0,
+        "regime": "sideways",
+        "hmm_confidence": 0.53,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 51.2,
+        "atr_ratio": 0.78
+      },
+      {
+        "pair": "LINK/KRW",
+        "close": 12030.0,
+        "fusion_prob": 0.2507,
+        "ta_score": 22.0,
+        "lgbm_prob": 0.0,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 1,
+        "rsi": 57.4,
+        "atr_ratio": 0.69
+      },
+      {
+        "pair": "DOT/KRW",
+        "close": 900.0,
+        "fusion_prob": 0.2412,
+        "ta_score": 15.2,
+        "lgbm_prob": 0.0,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 41.3,
+        "atr_ratio": 0.4
+      },
+      {
+        "pair": "XRP/KRW",
+        "close": 1265.0,
+        "fusion_prob": 0.2336,
+        "ta_score": 9.6,
+        "lgbm_prob": 0.0,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 49.3,
+        "atr_ratio": 0.83
+      },
+      {
+        "pair": "ADA/KRW",
+        "close": 197.0,
+        "fusion_prob": 0.2324,
+        "ta_score": 8.7,
+        "lgbm_prob": 0.0,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 50.2,
+        "atr_ratio": 0.92
+      },
+      {
+        "pair": "DOGE/KRW",
+        "close": 75.3,
+        "fusion_prob": 0.2227,
+        "ta_score": 1.3,
+        "lgbm_prob": 0.0,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 48.9,
+        "atr_ratio": 0.81
+      },
+      {
+        "pair": "ETH/KRW",
+        "close": 2353000.0,
+        "fusion_prob": 0.2212,
+        "ta_score": 0.2,
+        "lgbm_prob": 0.0,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 1,
+        "rsi": 66.1,
+        "atr_ratio": 0.82
+      },
+      {
+        "pair": "AVAX/KRW",
+        "close": 9100.0,
+        "fusion_prob": 0.2202,
+        "ta_score": -0.6,
+        "lgbm_prob": 0.0,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 37.6,
+        "atr_ratio": 0.62
+      },
+      {
+        "pair": "SHIB/KRW",
+        "close": 0.0049,
+        "fusion_prob": 0.2115,
+        "ta_score": -7.4,
+        "lgbm_prob": 0.0,
+        "regime": "bear",
+        "hmm_confidence": 0.527,
+        "breakout_signal": 0,
+        "stage2": 0,
+        "rsi": 52.9,
+        "atr_ratio": 0.93
+      }
+    ],
+    "recent_decisions": [
+      {
+        "ts": "2026-11-22T17:50:11.413763+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.636,
+        "cum_imb": -0.953,
+        "spread": 0.00035
+      },
+      {
+        "ts": "2026-11-22T17:50:13.912744+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.636,
+        "cum_imb": -0.957,
+        "spread": 0.00023
+      },
+      {
+        "ts": "2026-11-22T17:50:24.843046+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.696,
+        "cum_imb": -0.988,
+        "spread": 0.00011
+      },
+      {
+        "ts": "2026-11-22T17:50:25.527578+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.696,
+        "cum_imb": -0.988,
+        "spread": 0.00011
+      },
+      {
+        "ts": "2026-11-22T17:50:30.527503+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.696,
+        "cum_imb": -0.988,
+        "spread": 0.00011
+      },
+      {
+        "ts": "2026-11-22T17:50:35.519331+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.696,
+        "cum_imb": -0.988,
+        "spread": 0.00011
+      },
+      {
+        "ts": "2026-11-22T17:50:40.726643+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.945,
+        "cum_imb": -0.959,
+        "spread": 0.00012
+      },
+      {
+        "ts": "2026-11-22T17:50:45.536911+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": 0.472,
+        "cum_imb": -0.816,
+        "spread": 1e-05
+      },
+      {
+        "ts": "2026-11-22T17:50:50.520014+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": 0.238,
+        "cum_imb": -0.873,
+        "spread": 1e-05
+      },
+      {
+        "ts": "2026-11-22T17:50:55.522639+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": 0.203,
+        "cum_imb": -0.887,
+        "spread": 1e-05
+      },
+      {
+        "ts": "2026-11-22T17:51:00.523925+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": 0.205,
+        "cum_imb": -0.887,
+        "spread": 1e-05
+      },
+      {
+        "ts": "2026-11-22T17:51:05.524453+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.983,
+        "cum_imb": -0.939,
+        "spread": 1e-05
+      },
+      {
+        "ts": "2026-11-22T17:51:10.522154+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.947,
+        "cum_imb": -0.985,
+        "spread": 0.00017
+      },
+      {
+        "ts": "2026-11-22T17:51:15.513996+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.736,
+        "cum_imb": -0.816,
+        "spread": 0.0002
+      },
+      {
+        "ts": "2026-11-22T17:51:20.526526+00:00",
+        "kind": "blocked",
+        "pair": "BTC/KRW",
+        "reason": "orderbook",
+        "top_imb": -0.736,
+        "cum_imb": -0.742,
+        "spread": 0.0002
+      },
+      {
+        "ts": "2026-11-22T17:51:25.523122+00:00",
+        "kind": "passed",
+        "pair": "BTC/KRW",
+        "tag": "fusion_buy",
+        "rate": 83073119.09564313,
+        "fusion": 0.523,
+        "ta": -14.6,
+        "hmm": "sideways"
+      },
+      {
+        "ts": "2026-11-22T18:07:26.957180+00:00",
+        "kind": "exit",
+        "pair": "BTC/KRW",
+        "reason": "trailing_stop_loss",
+        "rate": 82844000.0,
+        "pnl_pct": -0.28
+      },
+      {
+        "ts": "2026-11-22T18:10:02.868188+00:00",
+        "kind": "exit",
+        "pair": "BTC/KRW",
+        "reason": "trailing_stop_loss",
+        "rate": 82831000.0,
+        "pnl_pct": -0.29
+      },
+      {
+        "ts": "2026-11-22T18:30:29.815527+00:00",
+        "kind": "passed",
+        "pair": "BTC/KRW",
+        "tag": "fusion_buy",
+        "rate": 82841639.8974874,
+        "fusion": 0.536,
+        "ta": -15.6,
+        "hmm": "sideways"
+      },
+      {
+        "ts": "2026-11-22T19:02:36.934233+00:00",
+        "kind": "exit",
+        "pair": "BTC/KRW",
+        "reason": "trailing_stop_loss",
+        "rate": 82898000.0,
+        "pnl_pct": 0.07
+      },
+      {
+        "ts": "2026-11-22T19:35:11.222248+00:00",
+        "kind": "passed",
+        "pair": "BTC/KRW",
+        "tag": "fusion_buy",
+        "rate": 82864677.06143928,
+        "fusion": 0.565,
+        "ta": 5.6,
+        "hmm": "sideways"
+      },
+      {
+        "ts": "2026-11-22T20:23:52.790380+00:00",
+        "kind": "exit",
+        "pair": "BTC/KRW",
+        "reason": "trailing_stop_loss",
+        "rate": 82720000.0,
+        "pnl_pct": -0.17
+      },
+      {
+        "ts": "2026-11-22T20:40:27.664579+00:00",
+        "kind": "passed",
+        "pair": "BTC/KRW",
+        "tag": "fusion_buy",
+        "rate": 82762425.00612155,
+        "fusion": 0.549,
+        "ta": -5.2,
+        "hmm": "sideways"
+      },
+      {
+        "ts": "2026-11-22T21:03:11.835484+00:00",
+        "kind": "exit",
+        "pair": "BTC/KRW",
+        "reason": "roi",
+        "rate": 83330000.0,
+        "pnl_pct": 0.69
+      },
+      {
+        "ts": "2026-11-22T21:05:05.465351+00:00",
+        "kind": "exit",
+        "pair": "BTC/KRW",
+        "reason": "roi",
+        "rate": 83308000.0,
+        "pnl_pct": 0.66
+      },
+      {
+        "ts": "2026-11-22T21:07:12.726894+00:00",
+        "kind": "exit",
+        "pair": "BTC/KRW",
+        "reason": "trailing_stop_loss",
+        "rate": 83229000.0,
+        "pnl_pct": 0.56
+      }
+    ]
   }
 }
